@@ -1,0 +1,9 @@
+# 実行中に作られるもの（利用者ごとの中身なので共有しない）
+__pycache__/
+*.pyc
+_backup/
+*.json.tmp
+
+# OS が置いていくもの
+.DS_Store
+Thumbs.db

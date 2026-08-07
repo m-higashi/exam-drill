@@ -1,0 +1,1373 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>過去問練習アプリ</title>
+<style>
+:root{--bg:#f4f6f9;--card:#fff;--ink:#1f2733;--sub:#5b6675;--line:#e5e8ee;
+/* --warn / --maybe は薄い背景の上で 4.5:1（WCAG AA）を満たす濃さにしてある。
+   薄くすると app/test_ui.py のコントラスト検査で落ちる。 */
+--ok:#137a3f;--ng:#c0392b;--maybe:#96640f;--accent:#2b6cb0;--accent2:#1e4e79;
+--warn:#96640f;--warnbg:#fffbe6;--okbg:#e8f6ee;--ngbg:#fdecea;--mark:#e0a400;}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);line-height:1.7;
+font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,system-ui,sans-serif;
+-webkit-text-size-adjust:100%;padding-bottom:env(safe-area-inset-bottom)}
+header.top{position:sticky;top:0;z-index:20;background:#fff;border-bottom:1px solid var(--line);
+padding:10px 16px;display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
+header.top h1{font-size:16px;margin:0;flex:1;cursor:pointer;min-width:0;
+  /* ⚠️狭い画面でバッジに押されると、語の途中で改行される（Mac実機で指摘）。
+     1行に収めて、入りきらない分は … で省く */
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 書きかけ・未反映の知らせ。どの画面にいても見えるようにヘッダーへ置く */
+header.top .topstat{font-size:12px;font-weight:700;border-radius:999px;padding:5px 12px;
+cursor:pointer;white-space:nowrap;color:#8a5a00;background:var(--warnbg);border:1px solid #f0d98a}
+header.top .topstat:hover{background:#fdf3cf}
+header.top .topstat.pend{color:var(--accent2);background:#eef5ff;border-color:#cfe0f5}
+header.top .topstat.pend:hover{background:#e0edff}
+header.top .env{font-size:11px;color:var(--sub)}
+header.top .switch{font-size:12px;font-weight:700;color:var(--accent);background:#eef5ff;
+border:1px solid #cfe0f5;border-radius:999px;padding:5px 12px;cursor:pointer;white-space:nowrap}
+header.top .switch:hover{background:#e0edff}
+.pick .btn{display:flex;align-items:center;gap:14px}
+.pick .btn .ic{font-size:30px;line-height:1}
+.pick .btn .t,.pick .btn .d{display:block}
+.pick .btn .d{margin-top:2px}
+.wrap{max-width:860px;margin:0 auto;padding:16px}
+.btn{display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);
+border-radius:12px;padding:16px 18px;margin:0 0 12px;font-size:16px;color:var(--ink);cursor:pointer;
+box-shadow:0 1px 2px rgba(0,0,0,.04);transition:.12s}
+.btn:hover{border-color:var(--accent);transform:translateY(-1px)}
+.btn .t{font-weight:700;font-size:17px}
+.btn .d{font-size:13px;color:var(--sub);margin-top:3px}
+.btn.small{padding:12px 14px;font-size:15px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.grid .btn{margin:0}
+.stats{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 16px}
+.stat{flex:1;min-width:90px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;text-align:center}
+.stat .n{font-size:22px;font-weight:800;color:var(--accent2)}
+.stat .l{font-size:12px;color:var(--sub)}
+.danger{color:var(--ng);border-color:#f3c9c4}
+.danger:hover{border-color:var(--ng)}
+.muted{color:var(--sub);font-size:13px}
+/* quiz */
+.qbar{position:sticky;top:49px;z-index:15;background:var(--bg);padding:8px 0;display:flex;align-items:center;gap:10px}
+.qbar .prog{flex:1;height:8px;background:#e3e7ee;border-radius:99px;overflow:hidden}
+.qbar .prog>i{display:block;height:100%;background:var(--accent);width:0}
+.qbar .cnt{font-size:13px;color:var(--sub);white-space:nowrap}
+.qbar a{font-size:13px;color:var(--accent);text-decoration:none;white-space:nowrap}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.qmeta{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.qmeta .tag{font-size:12px;font-weight:700;color:#fff;background:var(--accent);border-radius:99px;padding:2px 10px}
+.qmeta .flag{font-size:12px;font-weight:700;color:var(--warn);background:var(--warnbg);border:1px solid #f0d98a;border-radius:99px;padding:2px 10px}
+.qmeta .star{margin-left:auto;font-size:22px;cursor:pointer;color:#ccc;user-select:none}
+.qmeta .star.on{color:var(--mark)}
+.stem{white-space:pre-wrap;font-size:16px;margin-bottom:12px}
+.imgs{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 14px}
+.imgs img{max-height:240px;max-width:100%;border:1px solid var(--line);border-radius:8px;background:#000;cursor:zoom-in}
+.choices{list-style:none;padding:0;margin:0}
+.ch{display:flex;gap:10px;align-items:flex-start;border:1.5px solid var(--line);border-radius:10px;
+padding:11px 13px;margin-bottom:9px;cursor:pointer;background:#fff;transition:.1s;font-size:15.5px}
+.ch:hover{border-color:var(--accent)}
+.ch .lab{font-weight:800;color:var(--sub);min-width:18px}
+.ch.sel{border-color:var(--accent);background:#eef5ff}
+.ch.correct{border-color:var(--ok);background:var(--okbg)}
+.ch.wrong{border-color:var(--ng);background:var(--ngbg)}
+.ch.disabled{cursor:default}
+.actions{display:flex;gap:10px;margin-top:6px}
+.act{flex:1;text-align:center;background:var(--accent);color:#fff;border:none;border-radius:10px;
+padding:13px;font-size:16px;font-weight:700;cursor:pointer}
+.act.sec{background:#fff;color:var(--accent);border:1.5px solid var(--accent)}
+.act:disabled{opacity:.45;cursor:default}
+.result{font-weight:800;font-size:17px;margin:10px 0}
+.result.ok{color:var(--ok)} .result.ng{color:var(--ng)} .result.rv{color:var(--warn)}
+.expl{border-top:1px dashed var(--line);margin-top:12px;padding-top:12px;font-size:14.5px}
+.expl .sec{font-weight:700;color:var(--accent);margin-top:8px}
+.expl .warnsec{font-weight:700;color:var(--warn);background:var(--warnbg);border:1px solid #f0d98a;border-radius:6px;padding:2px 8px;display:inline-block;margin-top:8px}
+.expl .cho{padding:2px 0 2px 24px;position:relative}
+.expl .cho .lab{position:absolute;left:0;font-weight:700;color:var(--sub)}
+.expl .plain{color:#333}
+.expl a{color:var(--accent);word-break:break-all}
+.epart{border-top:1px dashed var(--line);padding-top:10px;margin-top:10px}
+.eq{font-weight:700;margin-bottom:5px}
+.ea{white-space:pre-wrap;color:#222;font-size:15px}
+.badge{font-weight:800;padding:0 3px}
+.b-ok{color:var(--ok)} .b-ng{color:var(--ng)} .b-maybe{color:var(--maybe)}
+#lightbox{position:fixed;inset:0;background:rgba(0,0,0,.9);display:none;align-items:center;justify-content:center;z-index:50;padding:12px}
+#lightbox img{max-width:100%;max-height:100%}
+footer{color:var(--sub);text-align:center;padding:24px 12px;font-size:12px}
+/* ---- 編集モード ---- */
+.edwrap{max-width:1400px}
+.edcols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}
+@media (max-width:900px){.edcols{grid-template-columns:minmax(0,1fr)}}
+.edside{position:sticky;top:58px}
+@media (max-width:900px){.edside{position:static}}
+.edbar{position:sticky;top:49px;z-index:16;background:var(--bg);padding:8px 0;
+display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.edbar .sp{flex:1}
+.pill{font-size:12px;font-weight:700;border-radius:999px;padding:3px 10px;white-space:nowrap;
+border:1px solid var(--line);background:var(--card);color:var(--sub)}
+.pill.draft{color:#8a5a00;background:var(--warnbg);border-color:#f0d98a}
+.pill.pend{color:var(--accent2);background:#eef5ff;border-color:#cfe0f5}
+.pill.done{color:var(--ok);background:var(--okbg);border-color:#b8e0c8}
+.mini{font-size:14px;font-weight:700;border-radius:9px;padding:8px 13px;cursor:pointer;
+border:1.5px solid var(--accent);background:#fff;color:var(--accent);white-space:nowrap}
+.mini:hover{background:#eef5ff}
+.mini.fill{background:var(--accent);color:#fff}
+.mini.fill:hover{background:var(--accent2)}
+.mini:disabled{opacity:.45;cursor:default}
+.mini.warn{border-color:var(--warn);color:#8a5a00}
+.fld{margin-bottom:12px}
+.fld>label{display:block;font-size:13px;font-weight:700;color:var(--sub);margin-bottom:4px}
+.fld .hint{font-size:12px;color:var(--sub);font-weight:400;margin-left:6px}
+.fld textarea,.fld input[type=text]{width:100%;border:1.5px solid var(--line);border-radius:9px;
+padding:10px 12px;font-size:15px;font-family:inherit;line-height:1.7;color:var(--ink);
+background:#fff;resize:vertical}
+.fld textarea:focus,.fld input[type=text]:focus{outline:none;border-color:var(--accent)}
+.fld textarea.expl{min-height:min(46vh,520px)}
+/* 編集画面の図は小さく並べる。等倍だと左の列が延々と伸びて、
+   「左に問題・右に解説」の並びが崩れる（3年分入れて分かった） */
+.imgs.thumbs img{max-height:110px}
+/* 参照は1年分（80問・画像160枚超）を1ページに描くので、ここも小さく */
+.imgs.small img{max-height:150px}
+.fld textarea.src{min-height:100px;font-size:13.5px}
+.fld input.ans{max-width:180px;font-weight:700;letter-spacing:.08em}
+.row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.chk{display:flex;gap:7px;align-items:center;font-size:14px;cursor:pointer}
+.chk input{width:17px;height:17px}
+.notes{background:var(--warnbg);border:1px solid #f0d98a;border-radius:9px;padding:9px 12px;
+font-size:13px;color:#8a5a00;margin-bottom:12px}
+.notes ul{margin:4px 0 0;padding-left:18px}
+.msg{border-radius:9px;padding:9px 12px;font-size:13.5px;margin-bottom:12px}
+.msg.ok{background:var(--okbg);border:1px solid #b8e0c8;color:#0f5c31}
+.msg.ng{background:var(--ngbg);border:1px solid #f3c9c4;color:#8e2b20}
+.msg.info{background:#eef5ff;border:1px solid #cfe0f5;color:var(--accent2)}
+.log{white-space:pre-wrap;font-family:ui-monospace,Consolas,monospace;font-size:12px;
+background:#1f2733;color:#e6ebf2;border-radius:9px;padding:12px;max-height:320px;overflow:auto}
+.edlist{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.edlist a{display:inline-block;min-width:30px;text-align:center;padding:3px 5px;border-radius:7px;
+font-size:13px;text-decoration:none;border:1px solid var(--line);background:#fff;color:var(--sub);cursor:pointer}
+.edlist a.f{border-color:#f0d98a;background:var(--warnbg);color:#8a5a00;font-weight:700}
+.edlist a.d{border-color:var(--accent);background:#eef5ff;color:var(--accent);font-weight:700}
+.edlist a.cur{outline:2px solid var(--accent);outline-offset:1px}
+details.legend{border:1px solid var(--line);border-radius:9px;background:var(--bg);
+padding:8px 12px;margin:-4px 0 12px;font-size:13px;color:var(--sub)}
+details.legend summary{cursor:pointer;color:var(--accent);font-weight:700;font-size:13.5px}
+details.legend pre{white-space:pre-wrap;background:#fff;border:1px solid var(--line);
+border-radius:7px;padding:10px 12px;margin:8px 0;font-family:inherit;font-size:13px;
+line-height:1.75;color:var(--ink)}
+details.legend ul{margin:6px 0 2px;padding-left:18px}
+details.legend li{margin:2px 0}
+</style>
+</head>
+<body>
+<header class="top"><h1 id="home" onclick="go('menu')">過去問演習</h1>
+<button class="topstat" id="topstatus" onclick="goDrafts()" style="display:none"></button>
+<button class="switch" id="switchbtn" onclick="switchSubject()" style="display:none">⇄ 科目切替</button>
+<span class="env" id="env"></span></header>
+<div class="wrap" id="app"></div>
+<div id="lightbox" onclick="this.style.display='none'"><img id="lbimg" alt="拡大した図"></div>
+<footer id="foot">学習記録はこの端末のブラウザに保存されます。<b>（要確認）</b>問題は情報が古い/割れる可能性があります。</footer>
+
+<script>
+/* ---- 科目の定義は subjects.json（このファイルには書かない） ---- */
+let SUBJECTS={};
+let SUBJECT=null, CFG=null, PKEY=null, DATA=[], P={}, S=null, ESSAY=null;
+
+function load(){try{return JSON.parse(localStorage.getItem(PKEY))||{}}catch(e){return{}}}
+function save(){localStorage.setItem(PKEY,JSON.stringify(P))}
+function rec(id){return P[id]||(P[id]={c:null,m:0,sel:[]})}
+
+/* ---------- text rendering ---------- */
+function esc(t){t=(t||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  return t.replace(/&lt;(\/?)(sup|sub)&gt;/g,"<$1$2>")}
+/* HTMLの属性に入れる値。タグは復元しない（<sup> は文字として編集させる） */
+function escv(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;")
+  .replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;")}
+/* インラインのハンドラに渡す文字列（onclick 属性の中の fn('ここ') の「ここ」）。
+   ⚠️属性は先にHTMLとして解釈されるので、' を &#39; にしてはいけない。
+     HTMLの段階で ' に戻り、JSの文字列を抜け出せてしまう。
+     JS用に \' へ逃がしてから、HTML用に & < > " を逃がす、の順。 */
+function jsq(t){
+  const js = String(t == null ? "" : t)
+    .replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/\r?\n/g, "\\n");
+  return js.replace(/&/g, "&amp;").replace(/</g, "&lt;")
+           .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+/* すでに esc() を通した文字列を href に入れるための逃がし方。
+   & < > は済んでいるので触らない（触ると &amp;amp; になる）。残る " と ' だけ潰す。 */
+function hrefq(u){return u.replace(/"/g,"&quot;").replace(/'/g,"&#39;")}
+/* ⚠️入力は esc() 済みだが " と ' は残っている。そのまま href に入れると属性を抜けられる */
+function linkify(t){return t.replace(/(https?:\/\/[^\s、）)]+)/g,
+  u=>`<a href="${hrefq(u)}" target="_blank" rel="noopener">${u}</a>`)}
+function badge(t){return t.replace(/○/g,'<span class="badge b-ok">○</span>')
+  .replace(/×/g,'<span class="badge b-ng">×</span>').replace(/△/g,'<span class="badge b-maybe">△</span>')}
+function renderExpl(ex){
+  if(!ex||!ex.trim())return '<div class="expl"><span class="plain">（解説なし）</span></div>';
+  let out='<div class="expl">';
+  for(let raw of ex.split("\n")){
+    const line=raw.trim(); if(!line)continue;
+    const sec=line.match(/^【(.+?)】(.*)$/), cm=line.match(/^([a-e])[ 　](.*)$/);
+    if(sec){const cls=sec[1].includes("要確認")?"warnsec":"sec";
+      out+=`<div class="${cls}">【${esc(sec[1])}】</div>`;
+      if(sec[2].trim())out+= line.includes("http")?`<div class="plain">${linkify(esc(sec[2]))}</div>`:`<div class="plain">${badge(esc(sec[2]))}</div>`;
+    }else if(cm){out+=`<div class="cho"><span class="lab">${cm[1]}</span>${badge(esc(cm[2]))}</div>`;}
+    else{out+= line.includes("http")?`<div class="plain">${linkify(esc(line))}</div>`:`<div class="plain">${badge(esc(line))}</div>`;}
+  }
+  return out+"</div>";
+}
+/* 出典は、パイプライン側では解説に埋め込まれ、直接編集では別項目で持つ。
+   表示するときはどちらも同じ見た目になるよう、ここで足す。 */
+function explOf(q){
+  const s=q.sources||[];
+  return (q.expl||"")+(s.length?((q.expl||"").trim()?"\n":"")+"【出典】"+s.join(" / "):"");
+}
+
+/* ---------- navigation ---------- */
+function go(screen,arg){window.scrollTo(0,0);
+  if(screen==="menu")menu();
+  else if(screen==="years")years();
+  else if(screen==="quiz")quiz();
+}
+
+/* ---------- menu ---------- */
+function stats(){
+  let done=0,correct=0,wrong=0,marked=0;
+  for(const q of DATA){const r=P[q.id];if(!r)continue;
+    if(r.c===1){done++;correct++}else if(r.c===0){done++;wrong++}
+    if(r.m)marked++;}
+  return{done,correct,wrong,marked,total:DATA.length,
+    rate: done?Math.round(correct/done*100):0};
+}
+/* 画面内のお知らせ（ポップアップは使わない） */
+let NOTICE=null;
+function notice(kind,html){NOTICE={kind,html}}
+function noticeHTML(){if(!NOTICE)return"";const n=NOTICE;NOTICE=null;
+  return `<div class="msg ${n.kind}">${n.html}</div>`}
+/* 年の範囲は実データから作る（画面に数字を直書きしない） */
+function yearRange(){
+  const ys=[...new Set(DATA.map(q=>q.year))].sort((a,b)=>a-b);
+  if(!ys.length)return "年";
+  return ys.length===1 ? `${ys[0]}年` : `${ys[0]}〜${ys[ys.length-1]}年`;
+}
+function menu(){
+  if(!CFG){chooser();return;}
+  if(NOTICE)window.scrollTo(0,0);   // お知らせは画面の上に出るので、そこを見せる
+  const s=stats();
+  document.getElementById("app").innerHTML=noticeHTML()+`
+  <div class="stats">
+    <div class="stat"><div class="n">${s.total}</div><div class="l">総問題数</div></div>
+    <div class="stat"><div class="n">${s.done}</div><div class="l">解答済み</div></div>
+    <div class="stat"><div class="n">${s.rate}%</div><div class="l">正答率</div></div>
+    <div class="stat"><div class="n" style="color:var(--ng)">${s.wrong}</div><div class="l">間違い</div></div>
+    <div class="stat"><div class="n" style="color:var(--mark)">${s.marked}</div><div class="l">★マーク</div></div>
+  </div>
+  <button class="btn" onclick="go('years')"><div class="t">📅 年度別演習</div><div class="d">${yearRange()}を選んで順番に解く</div></button>
+  <button class="btn" onclick="startShuffle()"><div class="t">🔀 シャッフル演習</div><div class="d">全 ${s.total} 問をランダムな順で解く</div></button>
+  <button class="btn" onclick="startReview()"><div class="t">🔁 復習演習（間違い＋★マーク）</div><div class="d">間違えた ${s.wrong} 問＋マーク ${s.marked} 問だけを解く</div></button>
+  <button class="btn" onclick="browseYears()"><div class="t">📖 参照（問題・解答・解説を見る）</div><div class="d">採点せず、年度ごとに全問の解答と解説を一覧で読む</div></button>
+  ${CFG.essay?`<button class="btn" onclick="essayYears()"><div class="t">📝 筆記試験（記述式）解答</div><div class="d">自由記述問題の模範解答を閲覧（出典付き・演習なし）</div></button>`:''}
+  ${canEdit()?`<button class="btn" onclick="editHome()"><div class="t">✎ ${edDirect()?'問題と解説を編集':'解説を編集'}</div><div class="d">${edDirect()?'問題文・選択肢・画像・解答・解説を直す／問題を追加する':'解説・解答・要確認・出典を直す'}<br>${edTodoNote()}${edMenuNote()}</div></button>`:''}
+  <button class="btn danger small" onclick="resetAll()"><div class="t">🗑 学習記録をリセット</div><div class="d">解答履歴・正誤・★マークをすべて消去</div></button>
+  <p class="muted">記録はこの端末に自動保存されます。年度別は途中中断しても続きから再開できます。</p>`;
+}
+/* メニューにも「残っている作業」を出す。
+   ⚠️取り込んだ直後は「解答がまだ」がほとんどで、それが利用者にとって最重要。
+     以前は「要確認 N問」だけを出していて、編集トップまで行かないと気づけなかった。 */
+function edTodoNote(){
+  const t=edTodo(),undone=[];
+  if(t.noans.length)undone.push(`<span style="white-space:nowrap">解答 <b>${t.noans.length}</b> 問</span>`);
+  if(t.noexpl.length)undone.push(`<span style="white-space:nowrap">解説 <b>${t.noexpl.length}</b> 問</span>`);
+  const parts=[];
+  if(undone.length)parts.push("未作成　"+undone.join("、"));
+  if(t.flag.length)parts.push(`<span style="white-space:nowrap">要確認 <b>${t.flag.length}</b> 問</span>`);
+  return parts.length?parts.join(" ／ "):'<span style="color:var(--ok)">残っている作業はありません</span>';
+}
+function edMenuNote(){
+  if(!canEdit())return"";
+  const s=draftState();
+  let out="";
+  if(s.n)out+=`<br><span style="color:#8a5a00;font-weight:700">書きかけ ${s.n}件（未保存・${esc(s.label)}）</span>`;
+  if(s.pend)out+=`${s.n?" ／ ":"<br>"}<span style="color:var(--accent);font-weight:700">保存済み・未反映 ${s.pend}件</span>`;
+  return out;
+}
+
+/* ---------- year select ---------- */
+function years(){
+  const byY={};
+  for(const q of DATA){(byY[q.year]=byY[q.year]||[]).push(q)}
+  let html='<button class="btn small" onclick="go(\'menu\')">← メニュー</button><div class="grid">';
+  for(const y of Object.keys(byY).sort()){
+    const qs=byY[y]; let done=0,cor=0;
+    for(const q of qs){const r=P[q.id];if(r&&r.c!==null){done++;if(r.c===1)cor++}}
+    html+=`<button class="btn" onclick="startYear(${+y})"><div class="t">${y}年</div>
+      <div class="d">${qs.length}問 ・ 済 ${done} ・ 正答 ${done?Math.round(cor/done*100):0}%</div></button>`;
+  }
+  document.getElementById("app").innerHTML=html+"</div>";
+}
+
+/* ---------- reference / browse (no grading) ---------- */
+function browseYears(){window.scrollTo(0,0);
+  const byY={};for(const q of DATA){(byY[q.year]=byY[q.year]||[]).push(q)}
+  let html='<button class="btn small" onclick="menu()">← メニュー</button>'
+    +'<p class="muted">年度を選ぶと、その年の全問の問題・解答・解説を一覧で読めます（採点なし）。</p><div class="grid">';
+  for(const y of Object.keys(byY).sort())
+    html+=`<button class="btn" onclick="browseYear(${+y})"><div class="t">${y}年</div><div class="d">${byY[y].length}問を閲覧</div></button>`;
+  document.getElementById("app").innerHTML=html+"</div>";
+}
+function browseYear(y){window.scrollTo(0,0);
+  const years=[...new Set(DATA.map(q=>q.year))].sort();
+  const qs=DATA.filter(q=>q.year===y).sort((a,b)=>a.no-b.no);
+  const nav=years.map(yy=>`<a onclick="browseYear(${+yy})" style="margin-right:8px;color:${yy===y?'var(--ink)':'var(--accent)'};font-weight:${yy===y?'700':'400'};text-decoration:none">${yy}</a>`).join("");
+  const jump=qs.map(q=>`<a onclick="bjump(${+q.no})" style="display:inline-block;min-width:26px;text-align:center;margin:2px;color:var(--accent);text-decoration:none;cursor:pointer">${q.no}</a>`).join("");
+  const cards=qs.map(browseCard).join("");
+  document.getElementById("app").innerHTML=
+    `<button class="btn small" onclick="browseYears()">← 年度選択</button>
+     <div class="card"><div style="font-weight:700;margin-bottom:6px">${y}年（全${qs.length}問）</div>
+       <div class="muted" style="margin-bottom:6px">年度: ${nav}</div>
+       <div style="font-size:13px">問題へジャンプ: ${jump}</div></div>${cards}
+     <button class="btn small" onclick="browseYears()">← 年度選択</button>`;
+}
+/* 問題番号ジャンプ。
+   ⚠️アンカーで飛ぶだけだと loading="lazy" の画像が読み込まれないまま残る
+   （Safariで実測）。飛ぶ前に、その問題の画像だけ先に読ませる。 */
+function bjump(no){
+  const el=document.getElementById("b"+no); if(!el)return;
+  el.querySelectorAll('img[loading="lazy"]').forEach(i=>{i.loading="eager";
+    if(!i.complete&&i.dataset.src){i.src=i.dataset.src}});
+  el.scrollIntoView(true);
+}
+function browseCard(q){
+  const r=rec(q.id);
+  const ch=q.choices.map(c=>{const ok=q.answer.includes(c.label);
+    return `<li class="ch disabled ${ok?'correct':''}"><span class="lab">${c.label}</span><span>${esc(c.text)}</span></li>`}).join("");
+  const imgs=q.images.map(u=>`<img loading="lazy" src="${escv(u)}" data-lb="${escv(u)}" alt="この問題の図（押すと拡大）">`).join("");
+  // 参照は1年分をまとめて描くので、図は小さく並べる（押すと拡大）
+  const ans=q.answer.length ? q.answer.join(", ").toUpperCase()
+          : (q.flag ? "—（要確認・未確定）" : "—（まだ入っていません）");
+  return `<div class="card" id="b${q.no}">
+    <div class="qmeta"><span class="tag">${q.year}年 問${q.no}</span>
+      ${q.flag?'<span class="flag">要確認</span>':''}
+      <span class="star ${r.m?'on':''}" onclick="toggleMark('${jsq(q.id)}',this)" title="★マーク">★</span></div>
+    <div class="stem">${esc(q.stem)}</div>
+    ${imgs?`<div class="imgs small">${imgs}</div>`:""}
+    <ul class="choices">${ch}</ul>
+    <div class="result ${q.answer.length?'ok':'rv'}">解答: ${ans}</div>
+    ${renderExpl(explOf(q))}</div>`;
+}
+
+/* ---------- 筆記試験（記述式）閲覧：採点なし・出典付き ---------- */
+function loadEssay(then){
+  if(ESSAY){then();return;}
+  document.getElementById("app").innerHTML='<div class="card">読み込み中…</div>';
+  fetch(CFG.essay).then(r=>r.json()).then(d=>{ESSAY=d;then();})
+   .catch(e=>{document.getElementById("app").innerHTML=
+     '<div class="card">記述式データの読み込みに失敗しました（'+esc(CFG.essay)+'）。</div>';});
+}
+function essayYears(){window.scrollTo(0,0);loadEssay(()=>{
+  let html='<button class="btn small" onclick="menu()">← メニュー</button>'
+    +`<div class="card"><div style="font-weight:700;margin-bottom:6px">📝 ${esc(ESSAY.title)}</div>`
+    +`<div class="muted">${esc(ESSAY.disclaimer)}</div></div><div class="grid">`;
+  for(const y of ESSAY.years)
+    html+=`<button class="btn" onclick="essayYear(${+y.year})"><div class="t">${y.year}年（${esc(y.exam)}）</div>
+      <div class="d">記述式 ${y.problems.length}問を閲覧</div></button>`;
+  document.getElementById("app").innerHTML=html+'</div>';
+});}
+function essayYear(yr){window.scrollTo(0,0);loadEssay(()=>{
+  const y=ESSAY.years.find(x=>x.year===yr); if(!y){essayYears();return;}
+  const nav=ESSAY.years.map(x=>`<a onclick="essayYear(${+x.year})" style="margin-right:10px;color:${x.year===yr?'var(--ink)':'var(--accent)'};font-weight:${x.year===yr?'700':'400'};text-decoration:none">${x.year}</a>`).join("");
+  const cards=y.problems.map(p=>{
+    const img=p.image?`<div class="imgs"><img loading="lazy" src="${escv(p.image)}" data-lb="${escv(p.image)}" alt="この問題の図（押すと拡大）"></div>`:"";
+    const intro=p.intro?`<div class="stem">${esc(p.intro)}</div>`:"";
+    const parts=p.parts.map(pt=>`<div class="epart"><div class="eq">${esc(pt.q)}</div><div class="ea">${badge(esc(pt.a))}</div></div>`).join("");
+    const src=(p.sources||[]).map(s=>`<div class="plain">・${esc(s.name)}<br><a href="${escv(s.url)}" target="_blank" rel="noopener">${esc(s.url)}</a></div>`).join("");
+    return `<div class="card">
+      <div class="qmeta"><span class="tag">${y.year}年 記述 問題${p.no}</span><span class="flag">要確認</span></div>
+      <div style="font-weight:700;margin-bottom:6px">${esc(p.title)}</div>
+      ${intro}${img}${parts}
+      <div class="expl"><div class="sec">【模範解答の根拠・出典】</div>${src||'<div class="plain">（出典整理中）</div>'}</div></div>`;
+  }).join("");
+  document.getElementById("app").innerHTML=
+    `<button class="btn small" onclick="essayYears()">← 記述式トップ</button>
+     <div class="card"><div style="font-weight:700">${y.year}年（${esc(y.exam)}）筆記試験（記述式）</div>
+       <div class="muted" style="margin-top:4px">年度: ${nav}</div>
+       <div class="muted" style="margin-top:4px">※模範解答は本アプリの独自作成（要確認）。各問末尾に出典を明記。演習(採点)はありません。</div></div>
+     ${cards}
+     <button class="btn small" onclick="essayYears()">← 記述式トップ</button>`;
+});}
+
+/* ---------- session builders ---------- */
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+function startYear(y){const list=DATA.filter(q=>q.year===y).sort((a,b)=>a.no-b.no);
+  S={list,idx:0,mode:"year "+y,ans:0,cor:0};quiz()}
+function startShuffle(){S={list:shuffle(DATA.slice()),idx:0,mode:"シャッフル",ans:0,cor:0};quiz()}
+function startReview(){
+  const list=DATA.filter(q=>{const r=P[q.id];return r&&(r.c===0||r.m===1)});
+  if(!list.length){notice("info","復習する問題がありません（間違い・★マークともに0件）。まず演習してください。");menu();return}
+  S={list:shuffle(list),idx:0,mode:"復習",ans:0,cor:0};quiz()}
+
+/* ---------- quiz ---------- */
+function quiz(){
+  if(S.idx>=S.list.length)return summary();
+  const q=S.list[S.idx], r=rec(q.id);
+  const need=q.answer.length;                 // 0 = review-only, 1 = single, >1 = multi
+  const pct=Math.round(S.idx/S.list.length*100);
+  let imgs=q.images.map(u=>`<img loading="lazy" src="${escv(u)}" data-lb="${escv(u)}" alt="この問題の図（押すと拡大）">`).join("");
+  let ch=q.choices.map(c=>`<li class="ch" data-l="${escv(c.label)}" onclick="pick('${jsq(c.label)}')">
+      <span class="lab">${c.label}</span><span>${esc(c.text)}</span></li>`).join("");
+  document.getElementById("app").innerHTML=`
+    <div class="qbar"><div class="prog"><i style="width:${pct}%"></i></div>
+      <span class="cnt">${S.idx+1} / ${S.list.length}　正答${S.cor}/${S.ans}</span>
+      <a onclick="go('menu')" title="解答した分は保存されています">中断</a></div>
+    <div class="card">
+      <div class="qmeta"><span class="tag">${q.year}年 問${q.no}</span>
+        ${q.flag?'<span class="flag">要確認</span>':''}
+        <span class="star ${r.m?'on':''}" id="star" onclick="toggleMark('${jsq(q.id)}')" title="★マーク">★</span></div>
+      <div class="stem">${esc(q.stem)}</div>
+      ${imgs?`<div class="imgs">${imgs}</div>`:""}
+      <ul class="choices" id="choices">${ch}</ul>
+      <div id="controls"></div>
+      <div id="feedback"></div>
+    </div>`;
+  S.cur={need,picked:[],graded:false};
+  renderControls();
+}
+function renderControls(){
+  const q=S.list[S.idx],c=S.cur;
+  const el=document.getElementById("controls");
+  if(c.graded){el.innerHTML=`<div class="actions">
+      <button class="act" onclick="next()">${S.idx+1>=S.list.length?"結果を見る":"次へ →"}</button></div>`;return}
+  if(c.need===0){el.innerHTML=`<div class="actions">
+      <button class="act sec" onclick="reveal()">解説を見る（${q.flag?'要確認・解答未確定':'解答はまだ入っていません'}）</button></div>`;return}
+  if(c.need>1){el.innerHTML=`<div class="actions">
+      <button class="act" id="submit" onclick="grade()" ${c.picked.length?"":"disabled"}>解答する（${c.need}つ選択）</button></div>`;return}
+  el.innerHTML=`<p class="muted">選択肢をタップで解答</p>`; // single: instant
+}
+function pick(label){
+  const c=S.cur; if(c.graded)return;
+  const li=[...document.querySelectorAll(".ch")].find(x=>x.dataset.l===label);
+  if(c.need===1){c.picked=[label];grade();return}
+  const i=c.picked.indexOf(label);
+  if(i>=0){c.picked.splice(i,1);li.classList.remove("sel")}
+  else{c.picked.push(label);li.classList.add("sel")}
+  const b=document.getElementById("submit");if(b)b.disabled=!c.picked.length;
+}
+function grade(){
+  const q=S.list[S.idx],c=S.cur;if(c.graded)return;c.graded=true;
+  const ans=q.answer, correct=ans.length===c.picked.length&&ans.every(a=>c.picked.includes(a));
+  document.querySelectorAll(".ch").forEach(li=>{li.classList.add("disabled");
+    const l=li.dataset.l;
+    if(ans.includes(l))li.classList.add("correct");
+    else if(c.picked.includes(l))li.classList.add("wrong");});
+  S.ans++; if(correct)S.cor++;
+  const r=rec(q.id); r.c=correct?1:0; r.sel=c.picked.slice(); save();
+  document.getElementById("feedback").innerHTML=
+    `<div class="result ${correct?'ok':'ng'}">${correct?"✅ 正解":"❌ 不正解"}　正答: ${ans.join(", ").toUpperCase()}</div>`+renderExpl(explOf(q));
+  renderControls();
+}
+function reveal(){ // 解答が入っていない問題（採点しない）
+  const q=S.list[S.idx],c=S.cur;c.graded=true;
+  document.querySelectorAll(".ch").forEach(li=>li.classList.add("disabled"));
+  const r=rec(q.id); if(r.c===null){/* 正誤には数えない */} save();
+  // ⚠️「要確認」と「まだ解答を入れていない」は別のこと。取り込んだ直後は後者ばかりなので、
+  //   一律に「要確認」と言うと利用者が混乱する（実際に3年分入れて気づいた）。
+  const msg = q.flag
+    ? "⚠ この問題は解答が確定していません（要確認）。解説の根拠をご確認ください。"
+    : "この問題にはまだ解答が入っていません。「✎ 問題と解説を編集」から書き足せます。";
+  document.getElementById("feedback").innerHTML=
+    `<div class="result rv">${msg}</div>`+renderExpl(explOf(q));
+  renderControls();
+}
+function toggleMark(id,elem){const r=rec(id);r.m=r.m?0:1;save();
+  const s=elem||document.getElementById("star");if(s)s.classList.toggle("on",!!r.m)}
+function next(){S.idx++;quiz()}
+function summary(){
+  const s=S,acc=s.ans?Math.round(s.cor/s.ans*100):0;
+  document.getElementById("app").innerHTML=noticeHTML()+`
+    <div class="card" style="text-align:center">
+      <h2 style="margin:6px 0">演習おわり（${s.mode}）</h2>
+      <div class="stats" style="margin-top:14px">
+        <div class="stat"><div class="n">${s.list.length}</div><div class="l">出題</div></div>
+        <div class="stat"><div class="n">${s.ans}</div><div class="l">解答</div></div>
+        <div class="stat"><div class="n" style="color:var(--ok)">${s.cor}</div><div class="l">正解</div></div>
+        <div class="stat"><div class="n">${acc}%</div><div class="l">正答率</div></div>
+      </div>
+      <div class="actions" style="margin-top:8px">
+        <button class="act sec" onclick="go('menu')">メニュー</button>
+        <button class="act" onclick="retryWrong()">間違いを復習</button>
+      </div></div>`;
+}
+function retryWrong(){
+  const list=S.list.filter(q=>{const r=P[q.id];return r&&r.c===0});
+  if(!list.length){notice("ok","このセットに間違いはありません。");summary();return}
+  S={list:shuffle(list),idx:0,mode:"復習",ans:0,cor:0};quiz();
+}
+/* リセットは「計画を見せる → 実行」の2段。ポップアップは使わない */
+function resetAll(){
+  const s=stats();window.scrollTo(0,0);
+  document.getElementById("app").innerHTML=`
+    <div class="card">
+      <div style="font-weight:700;color:var(--ng)">学習記録をリセットします</div>
+      <p style="margin:8px 0 4px">消えるのは <b>${esc(CFG.short)}</b> の学習記録だけです。</p>
+      <ul style="margin:0 0 8px">
+        <li>解答済みの記録 ${s.done} 問（正解 ${s.correct}・間違い ${s.wrong}）</li>
+        <li>★マーク ${s.marked} 問</li>
+        <li>年度別演習の「続きから」の位置</li>
+      </ul>
+      <p class="muted">問題・解答・解説のデータは消えません。もう一方の科目の記録も残ります。
+        <b>元に戻すことはできません。</b></p>
+      <div class="actions">
+        <button class="act sec" onclick="menu()">やめる</button>
+        <button class="act" style="background:var(--ng)" onclick="resetAllRun()">消す</button>
+      </div></div>`;
+}
+function resetAllRun(){P={};localStorage.removeItem(PKEY);
+  notice("ok","学習記録を消しました。");menu()}
+function lb(u){document.getElementById("lbimg").src=u;document.getElementById("lightbox").style.display="flex"}
+/* 画像の拡大は data属性＋委譲で受ける（インラインのJSに保存内容を渡さない）*/
+document.addEventListener("click",e=>{
+  const t=e.target; if(t&&t.dataset&&t.dataset.lb)lb(t.dataset.lb);
+});
+
+/* keyboard: 1-5 select a-e, Enter grade/next */
+document.addEventListener("keydown",e=>{
+  if(!S||!S.cur)return;const c=S.cur;
+  if(/^[1-5]$/.test(e.key)){const q=S.list[S.idx];const ch=q.choices[+e.key-1];if(ch&&!c.graded)pick(ch.label)}
+  else if(e.key==="Enter"){if(c.graded)next();else if(c.need>1&&c.picked.length)grade();else if(c.need===0)reveal()}
+});
+
+/* ---------- subject chooser / switch ---------- */
+function updateHeader(){
+  const h=document.getElementById("home"), sb=document.getElementById("switchbtn");
+  h.textContent = CFG ? (CFG.icon+" "+CFG.short+" 過去問演習") : "過去問演習";
+  // タブの見出しも科目名に合わせる（科目名はコードに書かず subjects.json から）
+  document.title = CFG ? (CFG.name+"｜過去問練習アプリ") : "過去問練習アプリ";
+  sb.style.display = (CFG && Object.keys(SUBJECTS).length>1) ? "" : "none";
+  document.getElementById("env").textContent=location.host;
+  showStatus();                       // 科目が変わっても知らせが正しく出るように
+}
+function setFooter(){
+  // 年の範囲は、データがあれば実データから作る（設定の固定文字だと中身とずれる）
+  // ⚠️0件のときに設定の固定文字（例 "2024–2025"）へ戻ると、中身と食い違う。
+  //   「まだ問題がありません」と正直に言う（Mac実機で指摘）。
+  const span = DATA.length ? yearRange() : "（まだ問題がありません）";
+  document.getElementById("foot").innerHTML = CFG
+   ? `${esc(CFG.name)} ${esc(span)}｜出典: ${esc(CFG.src)}。学習記録はこの端末のブラウザに保存されます。<b>（要確認）</b>問題は情報が古い/割れる可能性があります。`
+   : `学習記録はこの端末のブラウザに保存されます。<b>（要確認）</b>問題は情報が古い/割れる可能性があります。`;
+}
+function chooser(){
+  SUBJECT=null;CFG=null;PKEY=null;localStorage.removeItem("subject");
+  updateHeader();setFooter();window.scrollTo(0,0);
+  document.getElementById("app").innerHTML=
+    '<p class="muted" style="margin:2px 0 14px">演習する試験を選んでください。学習記録は試験ごとに別々に保存されます。</p><div class="pick">'
+    + Object.entries(SUBJECTS).map(([k,c])=>
+      `<button class="btn" onclick="pickSubject('${jsq(k)}')"><span class="ic">${c.icon}</span>`
+      +`<span><span class="t">${esc(c.name)}</span><span class="d">${c.years}</span></span></button>`).join("")
+    + '</div>';
+}
+function pickSubject(s){edUndoClear();localStorage.setItem("subject",s);loadSubject(s,menu);}
+function switchSubject(){location.hash="";chooser();}
+function loadSubject(s,then){
+  SUBJECT=s;CFG=SUBJECTS[s];PKEY=CFG.pkey;P=load();
+  updateHeader();setFooter();
+  // データが揃ってから、もう一度フッターを書く（年の範囲を実データから出すため）
+  const done=()=>{setFooter();authInit(()=>{then&&then()})};
+  if(DATA.__subject===s){done();return;}
+  ESSAY=null;                                   // 科目が変わったら記述式データも読み直す
+  document.getElementById("app").innerHTML='<div class="card">読み込み中…</div>';
+  fetch(CFG.file).then(r=>r.json()).then(d=>{DATA=d;DATA.__subject=s;done();})
+   .catch(e=>{document.getElementById("app").innerHTML=
+     '<div class="card">データ読み込みに失敗しました。<br>'+esc(CFG.file)+' を生成してください（pipeline/build_app.py）。</div>';});
+}
+
+/* ==================== 編集モード（解説オーサリング） ====================
+   解説・解答・要確認・出典を画面から直して _dataset/enriched/<年>.json に保存する。
+   保存しただけでは演習側の表示は変わらない（パイプラインの「反映」で再生成される）。
+   app/authoring.py のあるPCでだけ有効。無い環境では入口ごと出ない。            */
+let AUTH=null;      // null=未取得 / false=使えない / オブジェクト=使える
+let ED=null;        // {list, idx, raw, msg}
+
+function edDraftKey(){return "authoring_draft_"+SUBJECT}
+function edPendKey(){return "authoring_pending_"+SUBJECT}
+function edLoad(k,def){try{return JSON.parse(localStorage.getItem(k))||def}catch(e){return def}}
+function drafts(){return edLoad(edDraftKey(),{})}
+function pendings(){return edLoad(edPendKey(),[])}
+/* ⚠️書き込みは必ずこの2つを通す。ここから表示を更新するので、
+   「保存したのにバッジが残る／消えない」が起きない（別アプリで踏んだ型）。 */
+/* ⚠️書きかけの保存先を書き換える入口は、この2つだけ。**必ず refreshDrafts() を通す**。
+   showStatus() だけを呼んでいたため、編集バーのピルと「保存せずに捨てる…」が
+   描画時の状態のまま取り残された（Mac実機で指摘）。 */
+function setDrafts(d){localStorage.setItem(edDraftKey(),JSON.stringify(d));refreshDrafts()}
+function setPendings(a){localStorage.setItem(edPendKey(),JSON.stringify(a));refreshDrafts()}
+
+/* ---------- 書きかけ・未反映の判定（★ここ1か所だけ） ----------
+   画面ごとに数えると必ずずれる。件数も文言もすべてこの関数から作る。 */
+function draftState(){
+  if(!SUBJECT)return{n:0,pend:0,any:false,names:[],label:""};
+  const D=drafts(),ids=Object.keys(D);
+  const names=ids.map(id=>{const d=D[id];return `${d.year}年 問${d.no}`}).sort();
+  const pend=edDirect()?0:pendings().length;
+  return {n:ids.length, pend:pend, any:ids.length>0||pend>0, names:names,
+          label: names.length<=3 ? names.join("・")
+                                 : names.slice(0,2).join("・")+` ほか${names.length-2}問`};
+}
+function showStatus(){
+  const el=document.getElementById("topstatus");if(!el)return;
+  const s=draftState();
+  if(!s.any){el.style.display="none";el.textContent="";return}
+  el.style.display="";
+  if(s.n){                       // 書きかけ（未保存）を最優先で知らせる
+    el.className="topstat";
+    el.textContent=`✎ 書きかけ ${s.n}件（未保存）`;
+    el.title=`保存していない編集があります: ${s.label}\n押すと編集画面へ移動します。`;
+  }else{
+    el.className="topstat pend";
+    el.textContent=`保存済み・未反映 ${s.pend}件`;
+    el.title="保存はできています。「他のページに反映」を押すと演習・参照にも出ます。";
+  }
+}
+function goDrafts(){
+  const s=draftState();
+  if(!s.any)return;
+  editHome();
+  edMsg(s.n?"ng":"info", s.n
+    ? `<b>保存していない編集が ${s.n}件 あります。</b><div style="margin:4px 0">${esc(s.names.join("・"))}</div>`
+      +`このページの <b>保存</b> を押すと、すべてまとめて保存されます。`
+      +`<div class="row" style="margin-top:8px">`
+      +`<button class="mini" onclick="edDiscardPlan('all')">保存せずに捨てる…</button></div>`
+    : `保存済みで、まだ他のページに出していない編集が ${s.pend}件 あります。`
+      +`<b>他のページに反映</b> を押すと、演習・参照にも出ます。`);
+}
+
+/* ---------- 書きかけを捨てる（計画→実行→元に戻す の3段） ----------
+   ⚠️捨てたあとは必ず画面を描き直すこと。入力欄に古い文字が残っていると、
+     次に edCollect() が走った瞬間に書きかけが復活する。 */
+function edUndoKey(){return "authoring_undo_"+SUBJECT}
+function edUndoStash(){return edLoad(edUndoKey(),null)}
+/* 「終わった」を状態として持つ。保存・別の破棄・科目切替で退避を無効にする。
+   これをしないと、ずっと後になって古い内容へ巻き戻せてしまう。 */
+function edUndoClear(){localStorage.removeItem(edUndoKey())}
+
+function edDiscardPlan(scope){
+  if(ED)edCollect();
+  const D=drafts(), q=(scope==="one"&&ED)?ED.list[ED.idx]:null;
+  const ids=scope==="one" ? (q&&D[q.id]?[q.id]:[]) : Object.keys(D);
+  if(!ids.length){edMsg("info","捨てる書きかけはありません。");return}
+  const names=ids.map(id=>`${D[id].year}年 問${D[id].no}`).sort();
+  const items=[...new Set(ids.flatMap(id=>Object.keys(D[id].patch||{})))]
+    .map(k=>({explanation:"解説",sources:"出典",answer:"解答",flag:"要確認",
+              stem:"問題文",choices:"選択肢",images:"画像"}[k]||k));
+  edMsg("ng",
+    `<b>保存していない編集を捨てます（${ids.length}件）。</b>`
+    +`<div style="margin:6px 0">対象: ${esc(names.join("・"))}</div>`
+    +`<div style="margin:6px 0">捨てられるもの: ${esc(items.join("・"))}の書きかけ。`
+    +`<br>保存済みの内容は消えません。この画面で書いた分だけが、保存前の状態に戻ります。</div>`
+    +`<div class="row"><button class="mini" onclick="edMsg('','')">やめる</button>`
+    +`<button class="mini fill" style="background:var(--ng);border-color:var(--ng)" `
+    +`onclick="edDiscardRun('${jsq(scope)}')">捨てる</button></div>`);
+}
+function edDiscardRun(scope){
+  const D=drafts(), q=(scope==="one"&&ED)?ED.list[ED.idx]:null;
+  const ids=scope==="one" ? (q&&D[q.id]?[q.id]:[]) : Object.keys(D);
+  if(!ids.length){edMsg("info","捨てる書きかけはありません。");return}
+  const gone={}; ids.forEach(id=>{gone[id]=D[id];delete D[id]});
+  const token=String(Date.now())+"-"+ids.length;
+  setDrafts(D);
+  // ★捨てた直後に必ず描き直す（入力欄に残った文字から書きかけが復活するのを防ぐ）
+  if(ED&&ED.raw)edRender(); else editHome();
+  // 退避は描き直しの「あと」に置く。先に置くと、描き直しの期限切れ処理で消える
+  localStorage.setItem(edUndoKey(),JSON.stringify({token:token,items:gone}));
+  edMsg("ok",`${ids.length}件の書きかけを捨てました。保存済みの内容はそのままです。`
+    +`<div class="row" style="margin-top:8px">`
+    +`<button class="mini" onclick="edUndoDiscard('${jsq(token)}')">元に戻す</button></div>`
+    +`<p class="muted" style="margin:6px 0 0">この画面を離れると、元に戻せなくなります。</p>`)
+}
+function edUndoDiscard(token){
+  const st=edUndoStash();
+  if(!st||st.token!==token){
+    edMsg("ng","もう元に戻せません（そのあとに保存や別の操作をしています）。");return}
+  const D=drafts();
+  for(const id in st.items)D[id]=st.items[id];
+  setDrafts(D);
+  if(ED&&ED.raw)edRender(); else editHome();
+  edUndoClear();
+  edMsg("ok","書きかけを元に戻しました。")
+}
+
+function api(path,body){
+  const opt=(body===undefined)?{}:{method:"POST",
+    headers:{"Content-Type":"application/json","X-Authoring":"1"},
+    body:JSON.stringify(body)};
+  return fetch(path,opt).then(r=>r.text().then(t=>{
+    let j={}; try{j=JSON.parse(t)}catch(e){}
+    if(!r.ok)throw new Error(j.error||("サーバーが HTTP "+r.status+" を返しました"));
+    return j;}));
+}
+function authInit(then){
+  if(AUTH!==null){then&&then();return}
+  fetch("/api/authoring/config").then(r=>r.ok?r.json():null)
+    .then(j=>{AUTH=(j&&j.enabled)?j:false;then&&then()})
+    .catch(()=>{AUTH=false;then&&then()});
+}
+function canEdit(){return !!(AUTH&&AUTH.subjects&&AUTH.subjects[SUBJECT])}
+function edConf(){return (AUTH&&AUTH.subjects&&AUTH.subjects[SUBJECT])||{}}
+/* direct = データJSONを直接書き換える（保存した時点で反映。問題そのものも作れる）
+   pipeline = 解説だけを別ファイルに書き、「反映」で作り直す                     */
+function edDirect(){return edConf().mode==="direct"}
+function edCanAdd(){return !!edConf().canAddQuestions}
+function edReload(then){
+  fetch(CFG.file+"?t="+Date.now()).then(r=>r.json()).then(d=>{
+    DATA=d;DATA.__subject=SUBJECT;then&&then()})
+   .catch(()=>{then&&then()});
+}
+
+/* ---------- 進捗 ---------- */
+function edStats(){
+  const byY={},D=drafts(),P=pendings();
+  for(const q of DATA){const s=byY[q.year]||(byY[q.year]={total:0,flag:0,noans:0,noexpl:0,draft:0,pend:0});
+    s.total++;
+    if(q.flag)s.flag++;
+    if(!q.answer.length)s.noans++;              // 解答がまだ決まっていない
+    if(!(q.expl||"").trim())s.noexpl++;         // 解説がまだ無い
+  }
+  for(const id in D){const y=+id.split("-")[0];if(byY[y])byY[y].draft++}
+  for(const id of P){const y=+id.split("-")[0];if(byY[y])byY[y].pend++}
+  return byY;
+}
+/* 残っている仕事の種類。編集トップの「次にやること」を作る */
+function edTodo(){
+  return {noans: DATA.filter(q=>!q.answer.length),
+          noexpl: DATA.filter(q=>!(q.expl||"").trim()),
+          flag: DATA.filter(q=>q.flag)};
+}
+function editList(kind){
+  const t=edTodo()[kind]||[];
+  if(!t.length){editHome();edMsg("ok","この種類の残りはありません。");return}
+  edStart(t.slice().sort((a,b)=>a.year-b.year||a.no-b.no),0);
+}
+let ED_BAR_HOME=false;            // いま出ているバーがどちらか（作り直すときに使う）
+function edBarInner(home){
+  const s=draftState();                       // 件数は draftState() だけから採る
+  return `<button class="mini" onclick="${home?"go('menu')":"editHome()"}">← ${home?'メニュー':'編集トップ'}</button>
+    <span class="sp"></span>
+    ${s.n?`<span class="pill draft">書きかけ ${s.n}件（未保存）</span>`:''}
+    ${s.pend?`<span class="pill pend">保存済み・未反映 ${s.pend}件</span>`:''}
+    <button class="mini fill" onclick="edSaveAll()" ${s.n?'':'disabled'}>保存（書きかけ ${s.n}件）</button>
+    ${edDirect()?'':`<button class="mini warn" onclick="edRebuild()" ${s.pend?'':'disabled'}>他のページに反映</button>`}`;
+}
+function edBar(home){
+  ED_BAR_HOME=home;
+  // ⚠️id を付けて、**中身だけ**を差し替える。要素ごと入れ替える（outerHTML）と、
+  //   その要素を掴んでいる側から見えなくなる。
+  return `<div class="edbar" id="edbar">${edBarInner(home)}</div>`;
+}
+function edMsg(kind,text){
+  const el=document.getElementById("edmsg");
+  if(!el)return;
+  el.innerHTML=text?`<div class="msg ${kind}">${text}</div>`:"";
+  // ⚠️お知らせは画面上部に出る。押したボタンが下のほうにあると、確認が
+  //   ビューポート外に出て「何も起きなかった」ように見える（Mac実機で指摘）。
+  if(text&&el.scrollIntoView)el.scrollIntoView({block:"center",behavior:"smooth"});
+}
+
+/* ---------- 編集トップ（年度選択と進捗） ---------- */
+function editHome(){
+  if(ED)edCollect();
+  edUndoClear();          // 画面を移ったら「元に戻す」は期限切れ（ボタンも消える）
+  S=null;ED=null;window.scrollTo(0,0);
+  const st=edStats(),ys=Object.keys(st).sort(),todo=edTodo();
+  let tot=0;for(const y of ys)tot+=st[y].total;
+  const grid=ys.map(y=>{const s=st[y];
+    return `<button class="btn" onclick="editYear(${+y})"><div class="t">${y}年</div>
+      <div class="d">${s.total}問
+      ${s.noans?` ・ <span style="color:#8a5a00">未作成の解答 ${s.noans}</span>`:''}
+      ${s.noexpl?` ・ <span style="color:#8a5a00">未作成の解説 ${s.noexpl}</span>`:''}
+      ${s.flag?` ・ 要確認 <b>${s.flag}</b>`:''}
+      ${s.draft?` ・ <span style="color:#8a5a00">書きかけ ${s.draft}</span>`:''}
+      ${s.pend?` ・ <span style="color:var(--accent)">未反映 ${s.pend}</span>`:''}</div></button>`;
+  }).join("");
+  const nextY=ys.length?+ys[ys.length-1]:new Date().getFullYear();
+  // 残っている仕事を、片付ける順に並べる（解答 → 解説 → 要確認）
+  const todoRow=(kind,label,hint)=>{const n=todo[kind].length;
+    return `<button class="mini${n?' fill':''}" onclick="editList('${jsq(kind)}')" ${n?'':'disabled'}
+      title="${escv(hint)}">${label} ${n} 問</button>`};
+  document.getElementById("app").innerHTML=edBar(true)+`
+    <div id="edmsg"></div>
+    <div class="card">
+      <div style="font-weight:700">✎ ${edDirect()?'問題と解説の編集':'解説の編集'}（${esc(CFG.name)}）</div>
+      <div class="muted" style="margin-top:4px">全 ${tot} 問。
+        ${edDirect()?'<b>保存</b>を押すと、演習・参照の表示にもすぐ反映されます。'
+                   :'書いた内容は <b>保存</b> で解説ファイルに入り、<b>他のページに反映</b> で演習側に出ます。'}</div>
+      <div class="muted" style="margin:10px 0 6px">残っているもの（押すとその問題だけを順に見られます）</div>
+      <div class="row">
+        ${todoRow("noans","未作成の解答","正解をまだ決めていない問題。解いて答えを入れる")}
+        ${todoRow("noexpl","未作成の解説","解説がまだ空の問題")}
+        ${todoRow("flag","要確認","答えが割れている・情報が古いかもしれない問題")}
+      </div>
+      ${!todo.noans.length&&!todo.noexpl.length&&!todo.flag.length
+        ?'<div class="msg ok" style="margin:10px 0 0">残っている作業はありません。</div>':''}
+      ${draftState().n?`<div class="row" style="margin-top:12px">
+        <button class="mini" style="border-color:var(--ng);color:var(--ng)"
+          onclick="edDiscardPlan('all')">保存せずに捨てる…（${draftState().n}件）</button></div>`:''}
+    </div>
+    ${edCanAdd()?`<div class="card">
+      <div style="font-weight:700">この問題集の名前</div>
+      <div class="muted" style="margin:4px 0 8px">画面の見出し・下部の表示に出ます。
+        自分の問題を入れたら、ここで名前を変えてください。</div>
+      <div class="fld"><label>正式名 <span class="hint">下部に出ます</span></label>
+        <input type="text" id="ren_name" value="${escv(CFG.name||"")}"></div>
+      <div class="row">
+        <div class="fld" style="margin:0;flex:1;min-width:150px">
+          <label>短い名前 <span class="hint">画面の左上に出ます</span></label>
+          <input type="text" id="ren_short" value="${escv(CFG.short||"")}"></div>
+        <div class="fld" style="margin:0;flex:2;min-width:200px">
+          <label>出典の説明 <span class="hint">下部に出ます。空でも可</span></label>
+          <input type="text" id="ren_src" value="${escv(CFG.src||"")}"></div>
+      </div>
+      <button class="mini fill" onclick="edRename()">名前を変える</button>
+    </div>
+    <div class="card">
+      <div style="font-weight:700">問題を追加する</div>
+      <div class="muted" style="margin:4px 0 8px">年（またはセットの番号）を入れると、その最後に空の問題を1問足して編集画面を開きます。</div>
+      <div class="row">
+        <input type="text" class="ans" id="ed_addyear" value="${escv(String(nextY))}" style="max-width:120px">
+        <button class="mini fill" onclick="edAdd()">追加して編集する</button>
+        <span style="flex:1"></span>
+        <button class="mini" onclick="edImport()">📄 テキストから取り込む…</button>
+        <button class="mini" onclick="edAssignPlan()">📁 画像を割り当てる…</button>
+      </div>
+      <p class="muted" style="margin:8px 0 0">画像は <code>data/images/&lt;年&gt;/</code> に入れておけば、
+        <b>ファイル名の先頭の数字を問題番号として</b>まとめて割り当てられます
+        （例 <code>001-image01.png</code> → 問1）。テキストに画像の行を書く必要はありません。</p>
+      </div>`:''}
+    <div class="grid">${grid}</div>
+    <p class="muted">データは書き換える前に控えを取っています（同じフォルダの <code>_backup/</code>、直近10世代）。</p>`;
+}
+/* ---------- 画像フォルダから自動で割り当てる（direct のみ・計画→実行） ---------- */
+function edAssignPlan(mode){
+  edMsg("info","画像フォルダを見ています…");
+  api("/api/authoring/assign-images",{subject:SUBJECT,mode:mode||"fill",apply:false})
+   .then(p=>{
+     const rows=p.years.map(y=>`<tr>
+        <td style="padding:2px 10px">${y.year}年</td>
+        <td style="padding:2px 10px"><b>${y.questions}</b> 問に <b>${y.images}</b> 枚</td>
+        <td style="padding:2px 10px;color:var(--sub)">${y.unmatched?`割り当てられないファイル ${y.unmatched} 個`:""}</td>
+      </tr>`).join("");
+     // 「入れる先が無い（もう入っている）」と「1枚も見つからない」は別物として伝える
+     if(!p.assigned&&p.matched&&mode!=="replace"){
+       edMsg("ok",`<b>画像はすでに全部入っています。</b>`
+        +`<div style="margin:6px 0"><code>${esc(p.folder)}/&lt;年&gt;/</code> の画像のうち <b>${p.matched}</b> 枚は、すでに問題に紐づいています。</div>`
+        +`<div class="row" style="margin-top:8px">`
+        +`<button class="mini" onclick="edMsg('','')">閉じる</button>`
+        +`<button class="mini" onclick="edAssignPlan('replace')">入れ直す（すべて置き換える）</button></div>`);
+       return;
+     }
+     if(!p.assigned){
+       edMsg("ng",`<b>割り当てられる画像がありませんでした。</b>`
+        +`<div style="margin:6px 0"><code>${esc(p.folder)}/&lt;年&gt;/</code> に画像を入れ、`
+        +`ファイル名の先頭を問題番号にしてください（例 <code>001-image01.png</code>）。</div>`
+        +(p.skipped.length?`<div class="muted">見つかったが割り当てられなかったもの: ${esc(p.skipped.slice(0,8).join("・"))}</div>`:""));
+       return;
+     }
+     edMsg("ng",
+       `<b>画像を割り当てます。</b>`
+       +`<div style="margin:6px 0">${esc(p.folder)}/&lt;年&gt;/ を見て、`
+       +`<b>ファイル名の先頭の数字</b>を問題番号として紐づけます。</div>`
+       +`<div style="overflow-x:auto"><table style="font-size:13px;border-collapse:collapse">${rows}</table></div>`
+       +(mode==="replace"
+          ? `<div style="margin:6px 0">いま入っている画像の指定は<b>すべて置き換わります</b>。</div>`
+          : `<div style="margin:6px 0">すでに画像が入っている問題は<b>触りません</b>。</div>`)
+       +(p.skipped.length?`<div class="muted" style="margin:4px 0">割り当てられなかったファイル: ${esc(p.skipped.slice(0,8).join("・"))}${p.skipped.length>8?" ほか":""}</div>`:"")
+       +`<div class="row" style="margin-top:8px">`
+       +`<button class="mini" onclick="edMsg('','')">やめる</button>`
+       +`<button class="mini fill" onclick="edAssignRun('${jsq(mode||"fill")}')">割り当てる</button>`
+       +(mode==="replace"?"":`<button class="mini" onclick="edAssignPlan('replace')">すべて置き換える方で見る</button>`)
+       +`</div>`);
+   })
+   .catch(e=>edMsg("ng","画像フォルダを見られませんでした: "+esc(e.message)));
+}
+function edAssignRun(mode){
+  edMsg("info","割り当てています…");
+  api("/api/authoring/assign-images",{subject:SUBJECT,mode:mode,apply:true})
+   .then(p=>edReload(()=>{editHome();
+     edMsg("ok",`${p.questions} 問に ${p.assigned} 枚の画像を割り当てました。`)}))
+   .catch(e=>edMsg("ng","割り当てられませんでした: "+esc(e.message)));
+}
+
+/* ---------- 問題集の名前を変える（direct のみ） ---------- */
+function edRename(){
+  const g=id=>(document.getElementById(id)||{}).value||"";
+  const v={name:g("ren_name"),short:g("ren_short"),src:g("ren_src")};
+  if(!v.name.trim()||!v.short.trim()){edMsg("ng","正式名と短い名前は空にできません。");return}
+  edMsg("info","名前を変えています…");
+  api("/api/authoring/rename",{subject:SUBJECT,values:v})
+   .then(r=>{
+     if(!r.changed){edMsg("info","名前は変わっていません。");return}
+     // 設定を読み直して、ヘッダー・下部の表示にもすぐ反映する
+     fetch("subjects.json?t="+Date.now()).then(x=>x.json()).then(j=>{
+       for(const k in j)if(!k.startsWith("_"))SUBJECTS[k]=j[k];
+       CFG=SUBJECTS[SUBJECT];updateHeader();setFooter();editHome();
+       edMsg("ok",`名前を「${esc(r.name)}」に変えました。`);
+     }).catch(()=>{editHome();edMsg("ok","名前を変えました。画面を再読み込みすると全体に反映されます。")});
+   })
+   .catch(e=>edMsg("ng","名前を変えられませんでした: "+esc(e.message)));
+}
+
+/* ---------- 問題を追加（direct のみ） ---------- */
+function edAdd(){
+  const y=(document.getElementById("ed_addyear")||{}).value;
+  edMsg("info","追加しています…");
+  api("/api/authoring/add",{subject:SUBJECT,year:y})
+   .then(r=>edReload(()=>{
+     const q=DATA.find(x=>x.year===r.year&&x.no===r.no);
+     if(!q){editHome();edMsg("ok",`${r.year}年 問${r.no} を追加しました。`);return}
+     edStart(DATA.filter(x=>x.year===r.year).sort((a,b)=>a.no-b.no),
+             DATA.filter(x=>x.year===r.year).sort((a,b)=>a.no-b.no).findIndex(x=>x.id===q.id));
+   }))
+   .catch(e=>edMsg("ng","追加できませんでした: "+esc(e.message)));
+}
+/* ---------- テキストからの取り込み（direct のみ） ----------
+   メモ帳で書いた問題をまとめて入れる。「読み取って確認 → 取り込む」の2段。 */
+function edImport(){
+  if(ED)edCollect();
+  S=null;ED=null;window.scrollTo(0,0);
+  document.getElementById("app").innerHTML=edBar(true).replace("← メニュー","← 編集トップ")
+    .replace("go('menu')","editHome()")+`<div id="edmsg"></div>
+  <div class="card">
+    <div style="font-weight:700">📄 テキストから取り込む</div>
+    <div class="muted" style="margin:4px 0 10px">メモ帳などで書いた問題をまとめて入れられます。
+      書き方は同梱の <b>データ形式.md</b> と <b>data/sample.txt</b> を見てください。</div>
+    <div class="row" style="margin-bottom:10px">
+      <input type="file" id="imp_file" accept=".txt,.md,text/plain" onchange="edImportFile(this)">
+      <button class="mini" onclick="edImportSample()">書き方の見本を入れる</button>
+    </div>
+    <div class="fld"><label>取り込む内容 <span class="hint">ファイルを選ぶか、ここに貼り付け</span></label>
+      <textarea id="imp_text" style="min-height:min(40vh,420px);font-size:14px"
+        placeholder="2024&#10;&#10;問1&#10;問題文をここに書きます。&#10;a 選択肢1&#10;b 選択肢2&#10;答え: a&#10;解説:&#10;【総論】…"></textarea></div>
+    <div class="row">
+      <button class="mini fill" onclick="edImportPlan()">読み取って確認する</button>
+    </div>
+    <p class="muted" style="margin:10px 0 0">この段階では何も書き換わりません。
+      読み取った結果を見てから取り込みます。</p>
+  </div>
+  <div id="imp_plan"></div>`;
+}
+function edImportSample(){
+  fetch("data/sample.txt?t="+Date.now()).then(r=>r.ok?r.text():Promise.reject(new Error("見本が見つかりません")))
+   .then(t=>{document.getElementById("imp_text").value=t;edMsg("info","見本を読み込みました。この形で書きます。")})
+   .catch(e=>edMsg("ng","見本を読めませんでした: "+esc(e.message)));
+}
+/* メモ帳の保存で文字コードが揺れるので、utf-8 → utf-16 → cp932 の順に試す */
+function edDecode(buf){
+  const b=new Uint8Array(buf);
+  if(b[0]===0xFF&&b[1]===0xFE)return new TextDecoder("utf-16le").decode(buf);
+  if(b[0]===0xFE&&b[1]===0xFF)return new TextDecoder("utf-16be").decode(buf);
+  for(const enc of ["utf-8","shift_jis"]){
+    try{return new TextDecoder(enc,{fatal:true}).decode(buf).replace(/^﻿/,"")}catch(e){}
+  }
+  return new TextDecoder("utf-8").decode(buf).replace(/^﻿/,"");
+}
+function edImportFile(el){
+  const f=el.files&&el.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{document.getElementById("imp_text").value=edDecode(r.result);
+    edMsg("info",esc(f.name)+" を読み込みました。内容を確かめてから「読み取って確認する」を押してください。")};
+  r.onerror=()=>edMsg("ng","ファイルを読めませんでした。");
+  r.readAsArrayBuffer(f);
+}
+function edImportPlan(){
+  const text=(document.getElementById("imp_text")||{}).value||"";
+  const box=document.getElementById("imp_plan");
+  if(box)box.innerHTML="";            // 前回の結果を残さない（古い結果を新しいと誤読させない）
+  if(!text.trim()){edMsg("info","取り込む内容が空です。");return}
+  edMsg("info","読み取っています…");
+  api("/api/authoring/import",{subject:SUBJECT,text:text,apply:false})
+   .then(p=>{edMsg("","");document.getElementById("imp_plan").innerHTML=edImportPlanHTML(p)})
+   .catch(e=>edMsg("ng","読み取れませんでした: "+esc(e.message)));
+}
+function edImportPlanHTML(p){
+  const err=p.errors.length?`<div class="notes"><b>直すところが ${p.errors.length} 件あります</b>
+      <ul>${p.errors.map(e=>`<li>${e.line?e.line+"行目: ":""}${esc(e.message)}</li>`).join("")}</ul>
+      <div style="margin-top:6px">直してから、もう一度「読み取って確認する」を押してください。</div></div>`:"";
+  const rows=p.samples.map(s=>`<tr><td style="padding:2px 8px">${s.year}年 問${s.no}</td>
+      <td style="padding:2px 8px">${esc(s.stem)}…</td>
+      <td style="padding:2px 8px;white-space:nowrap">選択肢${s.choices} / 解答 ${esc(s.answer)}</td></tr>`).join("");
+  const ok=p.parsed>0&&!p.errors.length;
+  return `<div class="card">
+    <div style="font-weight:700">読み取った結果</div>
+    <ul style="margin:8px 0">
+      <li>読み取れた問題: <b>${p.parsed}</b> 問（${p.years.join("・")}年）</li>
+      <li>新しく増える: <b>${p.new}</b> 問</li>
+      <li>すでにある番号と重なる: <b>${p.overwrite}</b> 問
+        ${p.conflicts.length?`<span class="muted">（${p.conflicts.map(esc).join("・")}${p.overwrite>p.conflicts.length?" ほか":""}）</span>`:""}</li>
+    </ul>
+    ${err}
+    ${rows?`<div class="muted" style="margin-bottom:4px">最初の数問（読み取れているかの確認用）</div>
+      <div style="overflow-x:auto"><table style="font-size:13px;border-collapse:collapse">${rows}</table></div>`:""}
+    ${ok?`<div class="row" style="margin-top:14px">
+      <button class="mini fill" onclick="edImportRun('add')">追加する（重なった番号は上書き）</button>
+      <button class="mini" style="border-color:var(--ng);color:var(--ng)" onclick="edImportReplaceAsk()">すべて置き換える…</button>
+    </div>
+    <p class="muted" style="margin:8px 0 0">書き換える前の控えを <code>data/_backup/</code> に残します（直近10世代）。</p>`:""}
+  </div>`;
+}
+function edImportReplaceAsk(){
+  edMsg("ng",`<b>いまの問題をすべて捨てて、読み取った内容だけにします。</b>
+    <div style="margin:6px 0">いまの ${DATA.length} 問は消えます。学習記録も参照されなくなります。
+    控えは <code>data/_backup/</code> に残るので、そこから戻せます。</div>
+    <div class="row"><button class="mini" onclick="edMsg('','')">やめる</button>
+    <button class="mini fill" style="background:var(--ng);border-color:var(--ng)" onclick="edImportRun('replace')">すべて置き換える</button></div>`);
+}
+function edImportRun(mode){
+  const text=(document.getElementById("imp_text")||{}).value||"";
+  edMsg("info","取り込んでいます…");
+  api("/api/authoring/import",{subject:SUBJECT,text:text,mode:mode,apply:true})
+   .then(p=>edReload(()=>{editHome();
+     edMsg("ok",`${p.parsed} 問を取り込みました（新規 ${p.new}・上書き ${p.overwrite}）。`
+       +`いまの合計は ${p.total} 問です。`)}))
+   .catch(e=>edMsg("ng","取り込めませんでした: "+esc(e.message)
+     +"<br>データは書き換えていません。"));
+}
+
+/* ---------- 問題を削除（direct のみ・計画を見せてから実行） ---------- */
+function edDeletePlan(){
+  const q=ED.list[ED.idx];
+  edMsg("ng",`<b>${q.year}年 問${q.no} を削除します。</b>`
+    +`<div style="margin:6px 0">消えるもの: 問題文・選択肢・画像の指定・解答・解説・出典。`
+    +`この問題の学習記録も参照されなくなります。<b>元に戻せません。</b></div>`
+    +`<div class="row"><button class="mini" onclick="edMsg('','')">やめる</button>`
+    +`<button class="mini fill" style="background:var(--ng);border-color:var(--ng)" onclick="edDeleteRun()">消す</button></div>`);
+}
+function edDeleteRun(){
+  const q=ED.list[ED.idx];
+  api("/api/authoring/delete",{subject:SUBJECT,year:q.year,no:q.no})
+   .then(r=>{const D=drafts();delete D[q.id];setDrafts(D);
+     edReload(()=>{editHome();edMsg("ok",`${r.year}年 問${r.no} を削除しました。`)})})
+   .catch(e=>edMsg("ng","削除できませんでした: "+esc(e.message)));
+}
+function editYear(y){
+  const list=DATA.filter(q=>q.year===y).sort((a,b)=>a.no-b.no);
+  edStart(list,0);
+}
+function editFlagged(){editList("flag")}   /* 直リンク #…editflag 用（中身は同じ） */
+function edStart(list,idx){S=null;ED={list,idx,raw:null};edOpen(idx)}
+
+/* ---------- 1問を開く ---------- */
+function edOpen(i){
+  if(ED&&ED.raw)edCollect();
+  edUndoClear();          // 別の問題へ移ったら「元に戻す」は期限切れ
+  if(i<0||i>=ED.list.length){editHome();return}
+  ED.idx=i;ED.raw=null;window.scrollTo(0,0);
+  const q=ED.list[i];
+  document.getElementById("app").innerHTML=edBar()+'<div class="card">読み込み中…</div>';
+  api(`/api/authoring/entry?subject=${encodeURIComponent(SUBJECT)}&year=${q.year}&no=${q.no}`)
+    .then(r=>{ED.raw=r.entry||{};edRender()})
+    .catch(e=>{document.getElementById("app").innerHTML=edBar()+
+      `<div class="card"><div class="msg ng">${esc(q.year)}年 問${q.no} を読めませんでした。<br>${esc(e.message)}</div>
+       <button class="mini" onclick="edOpen(${i})">もう一度</button></div>`});
+}
+function edBase(){
+  const q=ED.list[ED.idx],raw=ED.raw||{};
+  if(edDirect())                       // サーバーが返す値がそのまま「今の中身」
+    return {explanation:raw.explanation||"", answer:raw.answer||"", flag:!!raw.flag,
+            sources:(raw.sources||[]).join("\n"), stem:raw.stem||"",
+            choices:raw.choices||"", images:raw.images||""};
+  return {explanation: raw.explanation!==undefined?raw.explanation:(q.expl||""),
+          answer: raw.answer!==undefined?raw.answer:q.answer.join(","),
+          flag: raw.flag!==undefined?!!raw.flag:!!q.flag,
+          sources: (raw.sources||[]).join("\n")};
+}
+function edRender(){
+  const q=ED.list[ED.idx],raw=ED.raw||{},base=edBase();
+  const d=drafts()[q.id];
+  const v=d?Object.assign({},base,d.fields):base;
+  const pend=!edDirect()&&pendings().includes(q.id);
+  const previews=(v.images||"").split("\n").map(s=>s.trim()).filter(Boolean);
+  const imgs=(edDirect()?previews:q.images)
+    .map(u=>`<img loading="lazy" src="${escv(u)}" data-lb="${escv(u)}" alt="この問題の図（押すと拡大）" onerror="this.style.opacity=.25">`).join("");
+  const ch=q.choices.map(c=>`<li class="ch disabled ${q.answer.includes(c.label)?'correct':''}">
+      <span class="lab">${c.label}</span><span>${esc(c.text)}</span></li>`).join("");
+  const jump=ED.list.map((x,i)=>{const dd=drafts()[x.id];
+    return `<a class="${x.flag?'f':''}${dd?' d':''}${i===ED.idx?' cur':''}"
+      onclick="edOpen(${i})" title="${escv(x.year+"年 問"+x.no)}">${ED.list.length&&ED.list[0].year!==ED.list[ED.list.length-1].year?x.year+'-':''}${x.no}</a>`}).join("");
+  const left = edDirect() ? `
+      <div class="card">
+        <div class="qmeta"><span class="tag">${q.year}年 問${q.no}</span>
+          ${v.flag?'<span class="flag">要確認</span>':''}</div>
+        <div class="fld"><label>問題文</label>
+          <textarea id="ed_stem" style="min-height:min(24vh,260px)" oninput="edTouch()">${escv(v.stem)}</textarea></div>
+        <div class="fld"><label>選択肢 <span class="hint">1行に1つ「a 選択肢の文」</span></label>
+          <textarea id="ed_ch" style="min-height:170px" oninput="edTouch()">${escv(v.choices)}</textarea></div>
+        <div class="fld"><label>画像 <span class="hint">1行に1件。このアプリのフォルダからの相対（例 images/q1.png）</span></label>
+          <textarea id="ed_img" style="min-height:110px;font-size:13.5px" oninput="edTouch()">${escv(v.images)}</textarea></div>
+        ${imgs?`<div class="imgs thumbs">${imgs}</div>
+          <p class="muted" style="margin:2px 0 8px">図を押すと拡大します。</p>`
+         :'<p class="muted">（画像なし。薄く表示されるものは見つからなかった画像です）</p>'}
+        <button class="mini" style="border-color:var(--ng);color:var(--ng)" onclick="edDeletePlan()">この問題を削除…</button>
+      </div>`
+    : `
+      <div class="card edside">
+        <div class="qmeta"><span class="tag">${q.year}年 問${q.no}</span>
+          ${q.flag?'<span class="flag">要確認</span>':''}
+          ${pend?'<span class="pill pend">保存済み・未反映</span>':''}</div>
+        <div class="stem">${esc(q.stem)}</div>
+        ${imgs?`<div class="imgs">${imgs}</div>`:""}
+        <ul class="choices">${ch}</ul>
+        <div class="muted">いま演習側に出ている解答: <b>${q.answer.length?esc(q.answer.join(", ").toUpperCase()):"（なし）"}</b>
+          ${pend?'<br>※この問題は保存済みですが、まだ「反映」していないので左の表示は古いままです。':''}</div>
+      </div>`;
+  document.getElementById("app").innerHTML=edBar()+`<div id="edmsg"></div>
+  <div class="edcols">
+    <div>${left}</div>
+    <div>
+      <div class="card">
+        <div id="ednotes"></div>
+        <div class="fld"><label>解説
+          <span class="hint">【総論】→【画像所見】→ 各選択肢 a〜e を1行ずつ（○×△＋理由）</span></label>
+          <textarea class="expl" id="ed_expl" oninput="edTouch()" onblur="edCheck()">${escv(v.explanation)}</textarea></div>
+        ${EXPL_LEGEND}
+        <div class="fld"><label>出典 <span class="hint">1行に1件（URLまたは資料名）</span></label>
+          <textarea class="src" id="ed_src" oninput="edTouch()">${escv(v.sources)}</textarea></div>
+        <div class="row">
+          <div class="fld" style="margin:0"><label>解答 <span class="hint">選択肢の記号。複数は a,b</span></label>
+            <input type="text" class="ans" id="ed_ans" value="${escv(v.answer)}" oninput="edTouch()"></div>
+          <label class="chk"><input type="checkbox" id="ed_flag" ${v.flag?'checked':''} onchange="edTouch()">要確認のまま残す</label>
+        </div>
+        ${(v.answer||"").trim()
+          ? '<div class="muted" style="margin:2px 0 12px">解答を空にすると、採点せず解説だけを見せる問題になります。</div>'
+          : `<div class="notes" style="margin:2px 0 12px"><b>この問題はまだ解答が入っていません。</b>
+             <div style="margin-top:4px">解いて分かったら、上の <b>解答</b> 欄に記号を入れてください
+             （複数なら <code>a,b</code>）。空のままでも保存でき、そのときは
+             <b>採点せず解説だけを見せる問題</b>として出題されます。</div></div>`}
+        <div class="row" style="margin-bottom:10px">
+          <button class="mini" onclick="edOpen(${ED.idx-1})" ${ED.idx?'':'disabled'}>← 前の問題</button>
+          <button class="mini" onclick="edOpen(${ED.idx+1})" ${ED.idx+1<ED.list.length?'':'disabled'}>次の問題 →</button>
+          <button class="mini" onclick="edCheck()">書式を検査</button>
+          <span style="flex:1"></span>
+          <button class="mini" id="ed_discard" style="border-color:var(--ng);color:var(--ng)"
+            onclick="edDiscardPlan('one')" ${d?'':'disabled'}>保存せずに捨てる…</button>
+        </div>
+        <button class="mini fill" style="width:100%;padding:12px" onclick="edSaveAll()">保存（この問題と、他の書きかけ）</button>
+        <p class="muted" style="margin:10px 0 0">${ED.idx+1} / ${ED.list.length} 問目。
+          Ctrl+S でも保存できます。保存すると、他の問題の書きかけも一緒に保存されます。</p>
+      </div>
+      <div class="card"><div class="muted">この一覧の問題へ移動（<span style="color:#8a5a00">■</span>要確認／<span style="color:var(--accent)">■</span>書きかけ）</div>
+        <div class="edlist">${jump}</div></div>
+    </div>
+  </div>`;
+}
+
+/* ---------- 書きかけの収集 ---------- */
+const ED_TEXT=["explanation","sources","answer","stem","choices","images"];
+function edFields(){
+  const g=id=>document.getElementById(id);
+  if(!g("ed_expl"))return null;
+  const f={explanation:g("ed_expl").value, sources:g("ed_src").value,
+           answer:g("ed_ans").value, flag:g("ed_flag").checked};
+  if(edDirect()){f.stem=g("ed_stem").value; f.choices=g("ed_ch").value; f.images=g("ed_img").value}
+  return f;
+}
+function edCollect(){
+  if(!ED||!ED.raw)return;
+  const f=edFields();if(!f)return;
+  const q=ED.list[ED.idx],raw=ED.raw,base=edBase(),D=drafts();
+  const keys=ED_TEXT.filter(k=>k in f);
+  const same=f.flag===base.flag&&keys.every(k=>f[k]===base[k]);
+  if(same){if(D[q.id]){delete D[q.id];setDrafts(D)}return}
+  // 保存時に送る差分をこの場で確定させる（他の問題をまとめて保存できるように）
+  let patch;
+  if(edDirect()){                       // 変わった項目だけをそのまま送る
+    patch={};
+    for(const k of keys)if(f[k]!==base[k])patch[k]=f[k];
+    if(f.flag!==base.flag)patch.flag=f.flag;
+  }else{                                // 解説と出典は常に、解答と要確認は変化か上書き中のみ
+    patch={explanation:f.explanation,
+           sources:f.sources.split("\n").map(s=>s.trim()).filter(Boolean)};
+    const norm=f.answer.toLowerCase().replace(/[^a-e]/g,"").split("")
+                .filter((c,i,a)=>a.indexOf(c)===i).join(",");
+    if(norm!==q.answer.join(",")||raw.answer!==undefined)patch.answer=norm;
+    if(f.flag!==!!q.flag||raw.flag!==undefined)patch.flag=f.flag;
+  }
+  D[q.id]={year:q.year,no:q.no,fields:f,patch:patch};
+  setDrafts(D);
+}
+/* 書きかけの件数に連動する表示を、**まとめて作り直す**。
+   ⚠️個別に手当てすると必ず取りこぼす。実際、保存ボタンだけ直していたため
+   ・編集バーの「書きかけ n件」のピルが古いまま残る
+   ・「保存せずに捨てる…」が描画時のまま disabled で、**押せない**
+   という2件をMac実機で指摘された（一番自然な流れで機能に入れなかった）。
+   増やすときも、必ずここを通す。 */
+let ED_BUSY=false;                    // 保存・反映の実行中はボタンを作り直さない
+function refreshDrafts(){
+  showStatus();
+  if(ED_BUSY)return;                  // 実行中に押せる形へ戻してしまわない
+  const s=draftState();
+  // ⚠️querySelectorAll の結果は静的なので、差し替えながら回しても安全
+  const bar=document.getElementById("edbar");
+  if(bar)bar.innerHTML=edBarInner(ED_BAR_HOME);
+  const d=document.getElementById("ed_discard");
+  if(d)d.disabled=!s.n;
+}
+function edBusy(on){
+  ED_BUSY=on;
+  document.querySelectorAll(".edbar .mini").forEach(b=>b.disabled=on);
+  const d=document.getElementById("ed_discard");
+  if(d)d.disabled=on||!draftState().n;
+  if(!on)refreshDrafts();
+}
+function edTouch(){
+  edCollect();
+  // ⚠️表示の更新は「入力があったこと」に紐づける。保存経路だけに付けると、
+  //   打ち直して元に戻したときに更新が走らず、古い表示が残る（別アプリで踏んだ型）。
+  refreshDrafts();
+}
+/* ---------- 書式の凡例（「書式を検査」が見ている形そのもの） ---------- */
+const EXPL_LEGEND=`
+<details class="legend"><summary>書式の例を見る</summary>
+<pre>【総論】この問題で問われている考え方をひとことで。
+【画像所見】画像があるときの着眼点。
+a 選択肢の要約 …×　そうでない理由。
+b 選択肢の要約 …○（正解）　そう言える理由。
+c 選択肢の要約 …△　条件つきで正しい場合。
+d 選択肢の要約 …×
+e 選択肢の要約 …×
+【結論】答えが割れているとき、どちらを採るか・なぜ割れるか。</pre>
+<ul>
+<li><b>【…】で囲んだ行</b>は見出しとして表示されます</li>
+<li><b>行頭が a〜e の行</b>は選択肢ごとの解説として、記号を左に出して並びます</li>
+<li><b>○×△</b> はそれぞれ<span class="badge b-ok">緑</span>・<span class="badge b-ng">赤</span>・<span class="badge b-maybe">オレンジ</span>で色が付きます</li>
+<li><b>http… は自動でリンク</b>になります。出典は下の欄に書けば末尾に【出典】として付きます</li>
+<li>「要確認」を付けた問題は、<b>【結論】と出典</b>も入れてください（後で見返したときに、なぜ割れているのかが残るように）</li>
+</ul></details>`;
+
+/* ---------- 書式の検査（拒否しない・助言だけ） ---------- */
+function edCheck(){
+  const f=edFields();if(!f)return;
+  const q=ED.list[ED.idx];
+  // 編集中の選択肢を見る（直接編集では選択肢そのものを増減できるため）
+  const labels = edDirect()
+    ? (f.choices.match(/^\s*([A-Za-z])[ 　.．、,)）]/gm)||[]).map(s=>s.trim()[0].toLowerCase()).join("")
+    : q.choices.map(c=>c.label).join("");
+  api("/api/authoring/check",{explanation:f.explanation,
+      labels:labels||"abcde",flag:f.flag,
+      sources:f.sources.split("\n").map(s=>s.trim()).filter(Boolean)})
+   .then(r=>{const el=document.getElementById("ednotes");if(!el)return;
+     el.innerHTML=r.notes.length
+       ? `<div class="notes"><b>書き方の助言</b><ul>${r.notes.map(n=>`<li>${esc(n)}</li>`).join("")}</ul></div>`
+       : `<div class="msg ok">書き方は揃っています。</div>`})
+   .catch(()=>{});
+}
+
+/* ---------- 保存 ---------- */
+function edSaveAll(){
+  if(ED)edCollect();
+  const D=drafts(),ids=Object.keys(D);
+  if(!ids.length){edMsg("info","保存するものはありません（書きかけなし）。");return}
+  const items=ids.map(id=>({year:D[id].year,no:D[id].no,entry:D[id].patch}));
+  edMsg("info","保存しています…");
+  api("/api/authoring/save-many",{subject:SUBJECT,items:items})
+   .then(r=>{
+     if(!edDirect()){const P=new Set(pendings());ids.forEach(id=>P.add(id));setPendings([...P])}
+     setDrafts({});
+     edUndoClear();          // 保存したら、直前の「捨てる」は元に戻せない
+     const where=r.years.length?`（${r.years.join("・")}年）`:"";
+     const msg=edDirect()
+       ? `${r.saved} 問を保存しました${where}。演習・参照の表示にも反映されています。`
+       : `${r.saved} 問を解説ファイルに保存しました${where}。`
+         +`<br>演習側に出すには <b>他のページに反映</b> を押してください。`;
+     const after=()=>{
+       if(ED&&ED.raw){                     // 保存後の中身を読み直してから描き直す
+         const q=ED.list[ED.idx];
+         api(`/api/authoring/entry?subject=${encodeURIComponent(SUBJECT)}&year=${q.year}&no=${q.no}`)
+          .then(g=>{ED.raw=g.entry||{};edRender();edMsg("ok",msg)})
+          .catch(()=>{edRender();edMsg("ok",msg)});
+       }else{editHome();edMsg("ok",msg)}
+     };
+     if(edDirect())edReload(()=>{          // 直接編集は演習側のデータも入れ替わる
+       if(ED)ED.list=ED.list.map(x=>DATA.find(y=>y.id===x.id)||x);
+       after();});
+     else after();
+   })
+   .catch(e=>{edMsg("ng","保存できませんでした: "+esc(e.message)
+     +"<br>書きかけはそのまま残しています。この画面を閉じずに、原因を直してからもう一度お試しください。")});
+}
+
+/* ---------- 反映（パイプライン再生成） ---------- */
+function edRebuild(){
+  if(ED)edCollect();
+  const st=draftState();
+  if(st.n){
+    edMsg("ng","書きかけが残っています。先に <b>保存</b> を押してください。");return}
+  if(!st.pend){edMsg("info","反映するものはありません。");return}
+  edBusy(true);
+  edMsg("info","再生成しています。1〜2分かかることがあります。この画面のまま待ってください…");
+  api("/api/authoring/rebuild",{subject:SUBJECT})
+   .then(r=>{
+     edBusy(false);
+     if(!r.ok){edMsg("ng","再生成に失敗しました（終了コード "+r.code+"）。下の記録を確認してください。"
+        +`<div class="log">${esc(r.log)}</div>`);return}
+     setPendings([]);
+     fetch(CFG.file+"?t="+Date.now()).then(x=>x.json()).then(d=>{
+       DATA=d;DATA.__subject=SUBJECT;
+       if(ED){ED.list=ED.list.map(q=>DATA.find(x=>x.id===q.id)||q);edRender()}else{editHome()}
+       edMsg("ok","反映しました。演習・参照の表示も新しくなっています。"
+         +`<div class="log">${esc(r.log)}</div>`);
+     }).catch(()=>{editHome();edMsg("ok","反映しました。ブラウザを再読み込みすると表示が新しくなります。")});
+   })
+   .catch(e=>{edBusy(false);
+     edMsg("ng","再生成を実行できませんでした: "+esc(e.message))});
+}
+
+/* Ctrl+S で保存（編集中のみ） */
+document.addEventListener("keydown",e=>{
+  if(ED&&(e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="s"){e.preventDefault();edSaveAll()}
+});
+/* 書きかけを残したままページを閉じようとしたら止める */
+window.addEventListener("beforeunload",e=>{
+  if(ED)edCollect();
+  if(draftState().n){e.preventDefault();e.returnValue=""}
+});
+
+/* boot: まず subjects.json を読み、それから画面を出す */
+function boot(){
+  const h=location.hash;
+  // 科目キーは subjects.json 由来。古いリンク用の別名は subjects.json の alias で持つ
+  const keys=Object.keys(SUBJECTS), alias={};
+  for(const k of keys)if(SUBJECTS[k].alias)alias[SUBJECTS[k].alias]=k;
+  const names=keys.concat(Object.keys(alias)).map(k=>k.replace(/[^\w-]/g,"")).filter(Boolean);
+  const msub=names.length?h.match(new RegExp("^#("+names.join("|")+")\\b")):null;
+  let sub = msub ? (SUBJECTS[msub[1]]?msub[1]:alias[msub[1]]) : localStorage.getItem("subject");
+  if(keys.length===1)sub=keys[0];                 // 科目が1つなら選択画面を出さない
+  const my=h.match(/y(\d{4})/), mb=h.match(/b(\d{4})/), me=h.match(/e(\d{4})/), mel=/essay/.test(h);
+  // 編集モードへの直リンク: #<科目>-edit / #<科目>-edit2025 / #<科目>-editflag（要確認だけ）
+  const med=/edit/.test(h), medy=h.match(/edit(\d{4})/), medf=/editflag/.test(h);
+  if(sub&&SUBJECTS[sub]){
+    loadSubject(sub,()=>{
+      if(med&&canEdit()){
+        if(medy&&DATA.some(q=>q.year===+medy[1]))editYear(+medy[1]);
+        else if(medf)editFlagged();
+        else editHome();
+      }
+      else if(me&&SUBJECTS[sub].essay)essayYear(+me[1]);
+      else if(mel&&SUBJECTS[sub].essay)essayYears();
+      else if(my&&DATA.some(q=>q.year===+my[1]))startYear(+my[1]);
+      else if(mb&&DATA.some(q=>q.year===+mb[1]))browseYear(+mb[1]);
+      else menu();
+    });
+  } else { chooser(); }
+}
+(function(){
+  document.getElementById("app").innerHTML='<div class="card">読み込み中…</div>';
+  fetch("subjects.json").then(r=>r.json()).then(j=>{
+    for(const k in j){if(!k.startsWith("_"))SUBJECTS[k]=j[k]}
+    if(!Object.keys(SUBJECTS).length)throw new Error("科目が1つも定義されていません");
+    boot();
+  }).catch(e=>{document.getElementById("app").innerHTML=
+    '<div class="card"><div class="msg ng"><b>subjects.json を読めませんでした。</b><br>'
+    +esc(e.message)+'<br>app フォルダの subjects.json があるか、書式（JSON）が正しいかを確認してください。</div></div>'});
+})();
+</script>
+</body>
+</html>
