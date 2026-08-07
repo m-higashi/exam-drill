@@ -9,7 +9,8 @@
 /* --warn / --maybe は薄い背景の上で 4.5:1（WCAG AA）を満たす濃さにしてある。
    薄くすると app/test_ui.py のコントラスト検査で落ちる。 */
 --ok:#137a3f;--ng:#c0392b;--maybe:#96640f;--accent:#2b6cb0;--accent2:#1e4e79;
---warn:#96640f;--warnbg:#fffbe6;--okbg:#e8f6ee;--ngbg:#fdecea;--mark:#e0a400;}
+--warn:#96640f;--warnbg:#fffbe6;--okbg:#e8f6ee;--ngbg:#fdecea;--mark:#e0a400;
+--accentbg:#eaf2fa;}
 *{box-sizing:border-box}
 html,body{margin:0}
 body{background:var(--bg);color:var(--ink);line-height:1.7;
@@ -132,6 +133,11 @@ background:#fff;resize:vertical}
 .imgs.thumbs img{max-height:110px}
 /* 参照は1年分（80問・画像160枚超）を1ページに描くので、ここも小さく */
 .imgs.small img{max-height:150px}
+/* 画像の受け取り欄。色はすべて変数を経由する（コントラストを検査しているため） */
+.drop{border:2px dashed var(--line);border-radius:10px;padding:14px;text-align:center;
+  cursor:pointer;background:var(--bg);margin:0 0 10px;font-size:14px}
+.drop:hover{border-color:var(--accent)}
+.drop.over{border-color:var(--accent);background:var(--accentbg)}
 .fld textarea.src{min-height:100px;font-size:13.5px}
 .fld input.ans{max-width:180px;font-weight:700;letter-spacing:.08em}
 .row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
@@ -845,6 +851,92 @@ function editHome(){
     <div class="grid">${grid}</div>
     <p class="muted">データは書き換える前に控えを取っています（同じフォルダの <code>_backup/</code>、直近10世代）。</p>`;
 }
+/* ---------- 画像を落として入れる（direct のみ） ----------
+   ⚠️置くのはフォルダまで。**問題には紐づけない**（欄に場所を足すだけ）。
+   紐づくのは利用者が「保存」を押したとき。保存の意味を変えないため。 */
+function edDragOver(e,on){
+  e.preventDefault();e.stopPropagation();
+  const z=document.getElementById("ed_drop");
+  if(z)z.classList.toggle("over",!!on);
+}
+function edDrop(e){
+  edDragOver(e,0);
+  const dt=e.dataTransfer;if(!dt)return;
+  // フォルダごと落とされることがある。file が取れないものは弾いて、その旨を言う
+  edUpload(Array.from(dt.files||[]));
+}
+function edPickOpen(){
+  const el=document.getElementById("ed_file");
+  if(el)el.click();
+}
+function edPickFiles(input){
+  edUpload(Array.from(input.files||[]));
+  input.value="";                       // 同じファイルをもう一度選べるように
+}
+function edUpMsg(kind,text){
+  const el=document.getElementById("ed_upmsg");
+  if(el)el.innerHTML=text?`<div class="msg ${kind}" style="margin:0 0 10px">${text}</div>`:"";
+}
+/* ⚠️authoring.MAX_IMAGE_BYTES と同じ値にすること（test_ui.py が突き合わせます）。
+   大きすぎるものを送ると、サーバーは本文を読む前に断つので**接続が切れるだけ**になり、
+   理由が画面に出ない。だから送る前にここで止めて、理由を言う。 */
+const MAX_IMAGE_BYTES=12*1024*1024;
+function edUpload(files){
+  if(!ED||!edDirect())return;
+  if(!files.length){edUpMsg("ng","ファイルとして受け取れませんでした（フォルダは入れられません）。");return}
+  const q=ED.list[ED.idx],year=q.year;
+  const done=[],failed=[];
+  const big=files.filter(f=>f.size>MAX_IMAGE_BYTES);
+  files=files.filter(f=>f.size<=MAX_IMAGE_BYTES);
+  big.forEach(f=>failed.push(`${f.name}: 大きすぎます（${(f.size/1024/1024).toFixed(1)}MB）。`
+    +`${MAX_IMAGE_BYTES/1024/1024}MB までにしてください`));
+  if(!files.length){
+    edUpMsg("ng","入れられませんでした:<ul style=\"margin:4px 0 0 18px;padding:0\">"
+      +failed.map(f=>`<li>${esc(f)}</li>`).join("")+"</ul>");return}
+  edUpMsg("info",`画像を入れています…（0 / ${files.length}）`);
+  // 1枚ずつ順に送る。まとめて送ると、1枚の失敗で全部が巻き添えになる
+  const next=i=>{
+    if(i>=files.length){
+      if(done.length){
+        const ta=document.getElementById("ed_img");
+        const cur=ta.value.replace(/\s+$/,"");
+        ta.value=(cur?cur+"\n":"")+done.join("\n");
+        edTouch();                       // 書きかけとして扱う（保存で問題に入る）
+      }
+      const parts=[];
+      if(done.length)parts.push(`<b>${done.length}枚をフォルダに入れました。</b>`
+        +`<div style="margin:4px 0">上の「画像」欄に場所を足しました。`
+        +`<b>この問題に紐づけるには「保存」を押してください。</b></div>`);
+      if(failed.length)parts.push(`<div style="margin:4px 0">入れられなかったもの:</div>`
+        +`<ul style="margin:2px 0 0 18px;padding:0">`
+        +failed.map(f=>`<li>${esc(f)}</li>`).join("")+`</ul>`);
+      edUpMsg(failed.length?(done.length?"ng":"ng"):"ok",parts.join(""));
+      if(done.length)edRenderImages();
+      return;
+    }
+    const f=files[i];
+    edUpMsg("info",`画像を入れています…（${i} / ${files.length}）`);
+    const rd=new FileReader();
+    rd.onerror=()=>{failed.push(`${f.name}: 読み取れませんでした`);next(i+1)};
+    rd.onload=()=>{
+      const b64=String(rd.result||"").split(",")[1]||"";
+      api("/api/authoring/upload-image",{subject:SUBJECT,year:year,name:f.name,data:b64})
+       .then(r=>{done.push(r.path);next(i+1)})
+       .catch(e=>{failed.push(`${f.name}: ${e.message}`);next(i+1)});
+    };
+    rd.readAsDataURL(f);
+  };
+  next(0);
+}
+/* 入れた画像をその場で見せる（保存前でも、入ったことが分かるように） */
+function edRenderImages(){
+  const ta=document.getElementById("ed_img");if(!ta)return;
+  const box=document.querySelector(".imgs.thumbs");
+  const list=ta.value.split("\n").map(x=>x.trim()).filter(Boolean);
+  const html=list.map(u=>`<img loading="lazy" src="${hrefq(u)}" alt="この問題の図（押すと拡大）" data-lb="${escv(u)}">`).join("");
+  if(box)box.innerHTML=html;
+}
+
 /* ---------- 画像フォルダから自動で割り当てる（direct のみ・計画→実行） ---------- */
 function edAssignPlan(mode){
   edMsg("info","画像フォルダを見ています…");
@@ -1102,6 +1194,15 @@ function edRender(){
           <textarea id="ed_ch" style="min-height:170px" oninput="edTouch()">${escv(v.choices)}</textarea></div>
         <div class="fld"><label>画像 <span class="hint">1行に1件。このアプリのフォルダからの相対（例 images/q1.png）</span></label>
           <textarea id="ed_img" style="min-height:110px;font-size:13.5px" oninput="edTouch()">${escv(v.images)}</textarea></div>
+        <div id="ed_drop" class="drop" ondragover="edDragOver(event,1)" ondragleave="edDragOver(event,0)"
+             ondrop="edDrop(event)" onclick="edPickOpen()">
+          <b>画像をここにドラッグ＆ドロップ</b>
+          <div class="muted" style="margin-top:2px">押してファイルを選ぶこともできます。
+            <code>data/images/${q.year}/</code> に入り、上の欄に場所が足されます</div>
+        </div>
+        <input type="file" id="ed_file" accept="image/png,image/jpeg,image/gif,image/webp"
+               multiple style="display:none" onchange="edPickFiles(this)">
+        <div id="ed_upmsg"></div>
         ${imgs?`<div class="imgs thumbs">${imgs}</div>
           <p class="muted" style="margin:2px 0 8px">図を押すと拡大します。</p>`
          :'<p class="muted">（画像なし。薄く表示されるものは見つからなかった画像です）</p>'}

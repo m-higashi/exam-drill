@@ -526,6 +526,83 @@ def _img_root(conf):
     return root, rel
 
 
+# ---------------------------------------------------------------- 画像を受け取る
+# ⚠️**ここはアプリで唯一「新しいファイルを作る」経路。名前も中身も信用しない。**
+#   ・置き場所は data/images/<年>/ の中だけ。書く直前に、本当にその中かを確かめる
+#   ・拡張子は白名簿。さらに**中身の先頭バイト**が拡張子と合っているかを見る
+#     （`わるいもの.png` と名乗る別形式を弾く）
+#   ・同じ名前があっても**上書きしない**（-2, -3 …を付ける）
+MAX_IMAGE_BYTES = 12 * 1024 * 1024
+BAD_NAME_CHARS = re.compile(r'[\x00-\x1f\x7f<>:"/\\|?*]')
+IMG_MAGIC = [
+    (b"\x89PNG\r\n\x1a\n", {".png"}),
+    (b"\xff\xd8\xff", {".jpg", ".jpeg"}),
+    (b"GIF87a", {".gif"}),
+    (b"GIF89a", {".gif"}),
+]
+
+
+def _looks_like_image(raw, ext):
+    for magic, exts in IMG_MAGIC:
+        if raw.startswith(magic):
+            return ext in exts
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":       # webp は先頭が2つに分かれる
+        return ext == ".webp"
+    return False
+
+
+def save_image(subject, year, filename, data_b64):
+    """画像を `images/<年>/` に置いて、データに書く相対パスを返す。
+
+    問題そのものには**紐づけない**。返したパスを画面の「画像」欄に足して、
+    利用者が「保存」を押したときに初めて問題へ入る（保存の意味を変えない）。
+    """
+    import base64                                        # ここでしか使わない
+
+    conf = subject_conf(subject)
+    if conf["mode"] != "direct":
+        raise BadRequest("この問題集では画像を追加できません。")
+    y = as_int(year, "年度")
+    root, rel = _img_root(conf)
+    if rel is None:
+        raise BadRequest("画像フォルダがアプリの外にあるため、追加できません。")
+
+    # --- 名前 ---
+    name = unicodedata.normalize("NFC", str(filename or "")).replace("\\", "/")
+    name = name.split("/")[-1]                           # パス区切りは全部落とす
+    stem, ext = os.path.splitext(name)
+    ext = ext.lower()
+    if ext not in IMG_EXTS:
+        raise BadRequest(f"画像として扱える形式ではありません: {ext or '（拡張子なし）'}"
+                         f"（{'・'.join(sorted(IMG_EXTS))}）")
+    stem = BAD_NAME_CHARS.sub("_", stem).strip(" .")[:80] or "image"
+
+    # --- 中身 ---
+    try:
+        raw = base64.b64decode(str(data_b64 or ""), validate=True)
+    except Exception:                                     # noqa: BLE001
+        raise BadRequest("画像の中身を読めませんでした。")
+    if not raw:
+        raise BadRequest("画像が空です。")
+    if len(raw) > MAX_IMAGE_BYTES:
+        raise BadRequest(f"画像が大きすぎます（{len(raw)/1024/1024:.1f}MB）。"
+                         f"{MAX_IMAGE_BYTES//1024//1024}MB までにしてください。")
+    if not _looks_like_image(raw, ext):
+        raise BadRequest("中身が画像として読めません（名前と形式が違うようです）。")
+
+    ydir = root / str(y)
+    ydir.mkdir(parents=True, exist_ok=True)
+    dest, n = ydir / f"{stem}{ext}", 2
+    while dest.exists():                                  # 上書きしない
+        dest = ydir / f"{stem}-{n}{ext}"
+        n += 1
+    # ⚠️最後にもう一度、書き込み先が画像フォルダの中かを確かめる（保険）
+    if root.resolve() not in dest.resolve().parents:
+        raise BadRequest("画像フォルダの外には書き込めません。")
+    dest.write_bytes(raw)
+    return {"path": f"{rel}/{y}/{dest.name}", "name": dest.name, "bytes": len(raw)}
+
+
 def assign_images(subject, mode="fill", apply=False):
     """`images/<年>/` を見て、ファイル名の先頭の数字を問題番号として割り当てる。
 

@@ -115,6 +115,8 @@ def tailscale_ip():
     return None
 
 MAX_BODY = 4 * 1024 * 1024        # 保存1回あたりの上限（解説はテキストなので十分）
+# 画像だけは別枠。base64 は元の約1.34倍になるので、12MBの画像が通る大きさにする
+MAX_BODY_IMAGE = 18 * 1024 * 1024
 ALLOWED_HOSTS = set()             # main() で組み立てる（編集APIのHost検証用）
 
 
@@ -201,12 +203,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return False
         return True
 
-    def _read_json(self):
+    def _read_json(self, limit=MAX_BODY):
         try:
             n = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             n = -1
-        if n < 0 or n > MAX_BODY:
+        if n < 0 or n > limit:
             raise authoring.BadRequest("送信内容が大きすぎます。")
         try:
             body = json.loads(self.rfile.read(n).decode("utf-8")) if n else {}
@@ -240,6 +242,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return A.import_text(body.get("subject"), body.get("text") or "",
                                  body.get("mode") or "add", bool(body.get("apply")),
                                  body.get("year"))
+        if path == "/api/authoring/upload-image":
+            return A.save_image(body.get("subject"), body.get("year"),
+                                body.get("name"), body.get("data"))
         if path == "/api/authoring/assign-images":
             return A.assign_images(body.get("subject"), body.get("mode") or "fill",
                                    bool(body.get("apply")))
@@ -257,7 +262,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         from urllib.parse import urlsplit, parse_qs
         u = urlsplit(self.path)
         try:
-            body = self._read_json() if writing else {}
+            # 画像の受け取りだけ上限が違う（本文は base64 なので大きい）
+            limit = MAX_BODY_IMAGE if u.path == "/api/authoring/upload-image" else MAX_BODY
+            body = self._read_json(limit) if writing else {}
             self._send_json(200, self._dispatch(u.path, parse_qs(u.query), body, writing))
         except authoring.BadRequest as e:
             self._send_json(400, {"error": str(e)})
