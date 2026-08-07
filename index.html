@@ -140,6 +140,9 @@ background:#fff;resize:vertical}
 .drop.over{border-color:var(--accent);background:var(--accentbg)}
 .fld textarea.src{min-height:100px;font-size:13.5px}
 .fld input.ans{max-width:180px;font-weight:700;letter-spacing:.08em}
+/* 年の入力は隣のボタンと1つの文に見せる。高さ・角丸・字の大きさを合わせる */
+.fld input.addyear,input.addyear{max-width:110px;padding:8px 13px;font-size:14px;
+  border-radius:9px;line-height:normal;text-align:center}
 .row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
 .chk{display:flex;gap:7px;align-items:center;font-size:14px;cursor:pointer}
 .chk input{width:17px;height:17px}
@@ -832,21 +835,28 @@ function editHome(){
           <label>出典の説明 <span class="hint">下部に出ます。空でも可</span></label>
           <input type="text" id="ren_src" value="${escv(CFG.src||"")}"></div>
       </div>
-      <button class="mini fill" onclick="edRename()">名前を変える</button>
+      <button class="mini fill" style="margin-top:4px" onclick="edRename()">名前を変える</button>
     </div>
     <div class="card">
       <div style="font-weight:700">問題を追加する</div>
-      <div class="muted" style="margin:4px 0 8px">年（またはセットの番号）を入れると、その最後に空の問題を1問足して編集画面を開きます。</div>
-      <div class="row">
-        <input type="text" class="ans" id="ed_addyear" value="${escv(String(nextY))}" style="max-width:120px">
+      <div class="row" style="margin:8px 0 6px">
+        <input type="text" class="ans addyear" id="ed_addyear" value="${escv(String(nextY))}">
+        <span style="font-weight:700">年に</span>
         <button class="mini fill" onclick="edAdd()">追加して編集する</button>
-        <span style="flex:1"></span>
-        <button class="mini" onclick="edImport()">📄 テキストから取り込む…</button>
-        <button class="mini" onclick="edAssignPlan()">📁 画像を割り当てる…</button>
       </div>
-      <p class="muted" style="margin:8px 0 0">画像は <code>data/images/&lt;年&gt;/</code> に入れておけば、
+      <div class="muted" style="margin:0 0 12px">年（またはセットの番号）を入れると、その最後に空の問題を1問足して編集画面を開きます。
+        <b>まだ無い番号を入れると、その番号のまとまりが新しくできます。</b></div>
+      <div class="row" style="margin-bottom:6px">
+        <button class="mini" onclick="edImport()">📄 まとめてテキストから取り込む</button>
+      </div>
+      <div class="muted" style="margin:0 0 10px">メモ帳で書いた問題を、まとめて入れられます。
+        <b>読み取って確認する → 追加する</b> の2段で、確認だけでは何も書き換わりません。</div>
+      <div class="row" style="margin-bottom:6px">
+        <button class="mini" onclick="edAssignPlan()">📁 まとめて画像を割り当てる</button>
+      </div>
+      <div class="muted" style="margin:0">画像は <code>data/images/&lt;年&gt;/</code> に入れておけば、
         <b>ファイル名の先頭の数字を問題番号として</b>まとめて割り当てられます
-        （例 <code>001-image01.png</code> → 問1）。テキストに画像の行を書く必要はありません。</p>
+        （例 <code>001-image01.png</code> → 問1）。1枚ずつなら、編集画面に直接ドラッグ＆ドロップできます。</div>
       </div>`:''}
     <div class="grid">${grid}</div>
     <p class="muted">データは書き換える前に控えを取っています（同じフォルダの <code>_backup/</code>、直近10世代）。</p>`;
@@ -854,6 +864,19 @@ function editHome(){
 /* ---------- 画像を落として入れる（direct のみ） ----------
    ⚠️置くのはフォルダまで。**問題には紐づけない**（欄に場所を足すだけ）。
    紐づくのは利用者が「保存」を押したとき。保存の意味を変えないため。 */
+/* ⚠️**欄の外に落としたときが危ない。** 何もしないと、ブラウザが既定の動作で
+   その画像を開き、**アプリの画面から離れて書きかけが消える**（バグ狩りで実測）。
+   画面のどこで落としても既定の動作は止め、編集中なら落とす場所を案内する。 */
+document.addEventListener("dragover",e=>{e.preventDefault()});
+document.addEventListener("drop",e=>{
+  e.preventDefault();
+  const dt=e.dataTransfer;
+  if(!dt||!dt.files||!dt.files.length)return;
+  const t=e.target;
+  if(t&&t.closest&&t.closest("#ed_drop"))return;         // 欄の中は edDrop() が扱う
+  if(ED&&edDirect())
+    edUpMsg("ng","画像は、<b>画像をここにドラッグ＆ドロップ</b> と書かれた欄に落としてください。");
+});
 function edDragOver(e,on){
   e.preventDefault();e.stopPropagation();
   const z=document.getElementById("ed_drop");
