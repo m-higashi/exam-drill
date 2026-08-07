@@ -173,6 +173,9 @@ def norm_answer(value, labels=LETTERS):
         return None
     if not isinstance(value, str):
         raise BadRequest("解答は文字列で指定してください")
+    # ⚠️記号は全角で打たれる（IMEの変換・Excelからの貼り付け）。ここで半角に寄せる。
+    #   値は記号と区切りだけなので、行ごと寄せてよい（本文には使わない）。
+    value = unicodedata.normalize("NFKC", value)
     ok = set(labels)
     seen = []
     for ch in value.lower():
@@ -211,11 +214,11 @@ def parse_choices(text):
         line = line.strip()
         if not line:
             continue
-        m = re.match(r"^([A-Za-z])[ 　.．、,)）]\s*(.+)$", line)
+        m = re.match(r"^([A-Za-zＡ-Ｚａ-ｚ])[ 　	.．、,)）]\s*(.+)$", line)
         if not m:
             raise BadRequest(f"選択肢の {i} 行目が読めません: 「{line[:24]}」"
                              f"（「a 選択肢の文」のように、記号・空白・本文の順で書いてください）")
-        lab = m.group(1).lower()
+        lab = unicodedata.normalize("NFKC", m.group(1)).lower()
         if lab not in LETTERS:
             raise BadRequest(f"選択肢の記号は {'・'.join(LETTERS)} のいずれかにしてください: {lab}")
         if lab in seen:
@@ -773,11 +776,18 @@ def delete_question(subject, year, qno):
 RE_YEAR = re.compile(r"^\s*(?:[#＃]+\s*|=+\s*|【)?\s*(?:年|セット)?\s*[:：]?\s*"
                      r"(\d{4})\s*(?:年|回)?\s*(?:】|=+)?\s*$")
 RE_QNO = re.compile(r"^\s*(?:第\s*)?(?:問\s*(\d+)|(\d+)\s*[.．、)）:：])\s*(.*)$")
-RE_CHOICE = re.compile(r"^\s*([A-Za-z])[ 　.．、,)）:：]\s*(.+)$")
+# ⚠️記号は全角で打たれる（IMEやExcelの自動変換）。**記号の位置だけ**半角に寄せる。
+#   行ごと NFKC すると本文の半角カナまで変わるので、拾った1文字だけを直す。
+RE_CHOICE = re.compile(r"^\s*([A-Za-zＡ-Ｚａ-ｚ])[ 　	.．、,)）:：]\s*(.+)$")
+
+
+def _ascii(text):
+    """全角の英数字だけを半角に寄せる（記号の位置に使う）。"""
+    return unicodedata.normalize("NFKC", str(text or ""))
 # ⚠️見出し語は「区切り必須」か「中身が記号だけ」に限る。緩くすると本文を食う。
 #   実例= 「図は、このアプリの…」という問題文が、画像の指定として飲み込まれた。
 RE_ANSWER = re.compile(r"^\s*(?:答え|解答|正解|answer)\s*[:：]?\s*"
-                       r"([A-Za-z][A-Za-z,、，・･\s]*|)\s*$", re.I)
+                       r"([A-Za-zＡ-Ｚａ-ｚ][A-Za-zＡ-Ｚａ-ｚ,、，・･\s　]*|)\s*$", re.I)
 RE_IMAGE = re.compile(r"^\s*(?:画像|図|image)\s*[:：]\s*(.+)$", re.I)
 RE_SOURCE = re.compile(r"^\s*(?:出典|参考|source)\s*[:：]\s*(.*)$", re.I)
 RE_FLAG = re.compile(r"^\s*(?:要確認|要検討)\s*$")
@@ -891,7 +901,8 @@ def parse_text(text, default_year=None):
             continue
         m = RE_CHOICE.match(line)
         if m:
-            q["_choices"].append({"label": m.group(1).lower(), "text": m.group(2).strip()})
+            q["_choices"].append({"label": _ascii(m.group(1)).lower(),
+                                  "text": m.group(2).strip()})
             continue
         if line.strip():
             if q["_choices"]:
