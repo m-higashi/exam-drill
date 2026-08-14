@@ -183,7 +183,7 @@ details.legend li{margin:2px 0}
 <script>
 /* ---- 科目の定義は subjects.json（このファイルには書かない） ---- */
 let SUBJECTS={};
-let SUBJECT=null, CFG=null, PKEY=null, DATA=[], P={}, S=null, ESSAY=null;
+let SUBJECT=null, CFG=null, PKEY=null, DATA=[], P={}, S=null;
 
 function load(){try{return JSON.parse(localStorage.getItem(PKEY))||{}}catch(e){return{}}}
 function save(){localStorage.setItem(PKEY,JSON.stringify(P))}
@@ -277,7 +277,6 @@ function menu(){
   <button class="btn" onclick="startShuffle()"><div class="t">🔀 シャッフル演習</div><div class="d">全 ${s.total} 問をランダムな順で解く</div></button>
   <button class="btn" onclick="startReview()"><div class="t">🔁 復習演習（間違い＋★マーク）</div><div class="d">間違えた ${s.wrong} 問＋マーク ${s.marked} 問だけを解く</div></button>
   <button class="btn" onclick="browseYears()"><div class="t">📖 参照（問題・解答・解説を見る）</div><div class="d">採点せず、年度ごとに全問の解答と解説を一覧で読む</div></button>
-  ${CFG.essay?`<button class="btn" onclick="essayYears()"><div class="t">📝 筆記試験（記述式）解答</div><div class="d">自由記述問題の模範解答を閲覧（出典付き・演習なし）</div></button>`:''}
   ${canEdit()?`<button class="btn" onclick="editHome()"><div class="t">✎ ${edDirect()?'問題と解説を編集':'解説を編集'}</div><div class="d">${edDirect()?'問題文・選択肢・画像・解答・解説を直す／問題を追加する':'解説・解答・要確認・出典を直す'}<br>${edTodoNote()}${edMenuNote()}</div></button>`:''}
   <button class="btn danger small" onclick="resetAll()"><div class="t">🗑 学習記録をリセット</div><div class="d">解答履歴・正誤・★マークをすべて消去</div></button>
   <p class="muted">記録はこの端末に自動保存されます。年度別は途中中断しても続きから再開できます。</p>`;
@@ -367,46 +366,6 @@ function browseCard(q){
     ${renderExpl(explOf(q))}</div>`;
 }
 
-/* ---------- 筆記試験（記述式）閲覧：採点なし・出典付き ---------- */
-function loadEssay(then){
-  if(ESSAY){then();return;}
-  document.getElementById("app").innerHTML='<div class="card">読み込み中…</div>';
-  fetch(CFG.essay).then(r=>r.json()).then(d=>{ESSAY=d;then();})
-   .catch(e=>{document.getElementById("app").innerHTML=
-     '<div class="card">記述式データの読み込みに失敗しました（'+esc(CFG.essay)+'）。</div>';});
-}
-function essayYears(){window.scrollTo(0,0);loadEssay(()=>{
-  let html='<button class="btn small" onclick="menu()">← メニュー</button>'
-    +`<div class="card"><div style="font-weight:700;margin-bottom:6px">📝 ${esc(ESSAY.title)}</div>`
-    +`<div class="muted">${esc(ESSAY.disclaimer)}</div></div><div class="grid">`;
-  for(const y of ESSAY.years)
-    html+=`<button class="btn" onclick="essayYear(${+y.year})"><div class="t">${y.year}年（${esc(y.exam)}）</div>
-      <div class="d">記述式 ${y.problems.length}問を閲覧</div></button>`;
-  document.getElementById("app").innerHTML=html+'</div>';
-});}
-function essayYear(yr){window.scrollTo(0,0);loadEssay(()=>{
-  const y=ESSAY.years.find(x=>x.year===yr); if(!y){essayYears();return;}
-  const nav=ESSAY.years.map(x=>`<a onclick="essayYear(${+x.year})" style="margin-right:10px;color:${x.year===yr?'var(--ink)':'var(--accent)'};font-weight:${x.year===yr?'700':'400'};text-decoration:none">${x.year}</a>`).join("");
-  const cards=y.problems.map(p=>{
-    const img=p.image?`<div class="imgs"><img loading="lazy" src="${escv(p.image)}" data-lb="${escv(p.image)}" alt="この問題の図（押すと拡大）"></div>`:"";
-    const intro=p.intro?`<div class="stem">${esc(p.intro)}</div>`:"";
-    const parts=p.parts.map(pt=>`<div class="epart"><div class="eq">${esc(pt.q)}</div><div class="ea">${badge(esc(pt.a))}</div></div>`).join("");
-    const src=(p.sources||[]).map(s=>`<div class="plain">・${esc(s.name)}<br><a href="${escv(s.url)}" target="_blank" rel="noopener">${esc(s.url)}</a></div>`).join("");
-    return `<div class="card">
-      <div class="qmeta"><span class="tag">${y.year}年 記述 問題${p.no}</span><span class="flag">要確認</span></div>
-      <div style="font-weight:700;margin-bottom:6px">${esc(p.title)}</div>
-      ${intro}${img}${parts}
-      <div class="expl"><div class="sec">【模範解答の根拠・出典】</div>${src||'<div class="plain">（出典整理中）</div>'}</div></div>`;
-  }).join("");
-  document.getElementById("app").innerHTML=
-    `<button class="btn small" onclick="essayYears()">← 記述式トップ</button>
-     <div class="card"><div style="font-weight:700">${y.year}年（${esc(y.exam)}）筆記試験（記述式）</div>
-       <div class="muted" style="margin-top:4px">年度: ${nav}</div>
-       <div class="muted" style="margin-top:4px">※模範解答は本アプリの独自作成（要確認）。各問末尾に出典を明記。演習(採点)はありません。</div></div>
-     ${cards}
-     <button class="btn small" onclick="essayYears()">← 記述式トップ</button>`;
-});}
-
 /* ---------- session builders ---------- */
 function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
 function startYear(y){const list=DATA.filter(q=>q.year===y).sort((a,b)=>a.no-b.no);
@@ -448,8 +407,12 @@ function renderControls(){
   const el=document.getElementById("controls");
   if(c.graded){el.innerHTML=`<div class="actions">
       <button class="act" onclick="next()">${S.idx+1>=S.list.length?"結果を見る":"次へ →"}</button></div>`;return}
-  if(c.need===0){el.innerHTML=`<div class="actions">
-      <button class="act sec" onclick="reveal()">解説を見る（${q.flag?'要確認・解答未確定':'解答はまだ入っていません'}）</button></div>`;return}
+  if(c.need===0){
+    // 選択肢が無い問題＝記述式。「解答がまだ入っていない」のではないので言い方を変える
+    const essay=!q.choices.length;
+    el.innerHTML=`<div class="actions">
+      <button class="act sec" onclick="reveal()">${essay?'模範解答を見る'
+        :`解説を見る（${q.flag?'要確認・解答未確定':'解答はまだ入っていません'}）`}</button></div>`;return}
   if(c.need>1){el.innerHTML=`<div class="actions">
       <button class="act" id="submit" onclick="grade()" ${c.picked.length?"":"disabled"}>解答する（${c.need}つ選択）</button></div>`;return}
   el.innerHTML=`<p class="muted">選択肢をタップで解答</p>`; // single: instant
@@ -584,7 +547,6 @@ function loadSubject(s,then){
   // データが揃ってから、もう一度フッターを書く（年の範囲を実データから出すため）
   const done=()=>{setFooter();authInit(()=>{then&&then()})};
   if(DATA.__subject===s){done();return;}
-  ESSAY=null;                                   // 科目が変わったら記述式データも読み直す
   document.getElementById("app").innerHTML='<div class="card">読み込み中…</div>';
   fetch(CFG.file).then(r=>r.json()).then(d=>{DATA=d;DATA.__subject=s;done();})
    .catch(e=>{document.getElementById("app").innerHTML=
@@ -726,6 +688,8 @@ function edConf(){return (AUTH&&AUTH.subjects&&AUTH.subjects[SUBJECT])||{}}
    pipeline = 解説だけを別ファイルに書き、「反映」で作り直す                     */
 function edDirect(){return edConf().mode==="direct"}
 function edCanAdd(){return !!edConf().canAddQuestions}
+/* 画像の置き場所は問題集ごとに違う（データJSONの隣）。画面に直書きしない */
+function edImgDir(){return edConf().imageDir||"data/images"}
 function edReload(then){
   fetch(CFG.file+"?t="+Date.now()).then(r=>r.json()).then(d=>{
     DATA=d;DATA.__subject=SUBJECT;then&&then()})
@@ -854,7 +818,7 @@ function editHome(){
       <div class="row" style="margin-bottom:6px">
         <button class="mini" onclick="edAssignPlan()">📁 まとめて画像を割り当てる</button>
       </div>
-      <div class="muted" style="margin:0">画像は <code>data/images/&lt;年&gt;/</code> に入れておけば、
+      <div class="muted" style="margin:0">画像は <code>${esc(edImgDir())}/&lt;年&gt;/</code> に入れておけば、
         <b>ファイル名の先頭の数字を問題番号として</b>まとめて割り当てられます
         （例 <code>001-image01.png</code> → 問1）。1枚ずつなら、編集画面に直接ドラッグ＆ドロップできます。</div>
       </div>`:''}
@@ -1117,6 +1081,7 @@ function edImportPlanHTML(p){
       <li>新しく増える: <b>${p.new}</b> 問</li>
       <li>すでにある番号と重なる: <b>${p.overwrite}</b> 問
         ${p.conflicts.length?`<span class="muted">（${p.conflicts.map(esc).join("・")}${p.overwrite>p.conflicts.length?" ほか":""}）</span>`:""}</li>
+      ${p.noChoices?`<li>選択肢なし（記述式）: <b>${p.noChoices}</b> 問</li>`:""}
     </ul>
     ${err}
     ${rows?`<div class="muted" style="margin-bottom:4px">最初の数問（読み取れているかの確認用）</div>
@@ -1213,7 +1178,8 @@ function edRender(){
           ${v.flag?'<span class="flag">要確認</span>':''}</div>
         <div class="fld"><label>問題文</label>
           <textarea id="ed_stem" style="min-height:min(24vh,260px)" oninput="edTouch()">${escv(v.stem)}</textarea></div>
-        <div class="fld"><label>選択肢 <span class="hint">1行に1つ「a 選択肢の文」</span></label>
+        <div class="fld"><label>選択肢 <span class="hint">${edConf().essay?'記述式の問題集なので、空のままでかまいません'
+            :'1行に1つ「a 選択肢の文」'}</span></label>
           <textarea id="ed_ch" style="min-height:170px" oninput="edTouch()">${escv(v.choices)}</textarea></div>
         <div class="fld"><label>画像 <span class="hint">1行に1件。このアプリのフォルダからの相対（例 images/q1.png）</span></label>
           <textarea id="ed_img" style="min-height:110px;font-size:13.5px" oninput="edTouch()">${escv(v.images)}</textarea></div>
@@ -1221,7 +1187,7 @@ function edRender(){
              ondrop="edDrop(event)" onclick="edPickOpen()">
           <b>画像をここにドラッグ＆ドロップ</b>
           <div class="muted" style="margin-top:2px">押してファイルを選ぶこともできます。
-            <code>data/images/${q.year}/</code> に入り、上の欄に場所が足されます</div>
+            <code>${esc(edImgDir())}/${q.year}/</code> に入り、上の欄に場所が足されます</div>
         </div>
         <input type="file" id="ed_file" accept="image/png,image/jpeg,image/gif,image/webp"
                multiple style="display:none" onchange="edPickFiles(this)">
@@ -1249,7 +1215,8 @@ function edRender(){
       <div class="card">
         <div id="ednotes"></div>
         <div class="fld"><label>解説
-          <span class="hint">【総論】→【画像所見】→ 各選択肢 a〜e を1行ずつ（○×△＋理由）</span></label>
+          <span class="hint">${edConf().essay?'【模範解答】に、小問ごとの答えを順に'
+            :'【総論】→【画像所見】→ 各選択肢 a〜e を1行ずつ（○×△＋理由）'}</span></label>
           <textarea class="expl" id="ed_expl" oninput="edTouch()" onblur="edCheck()">${escv(v.explanation)}</textarea></div>
         ${EXPL_LEGEND}
         <div class="fld"><label>出典 <span class="hint">1行に1件（URLまたは資料名）</span></label>
@@ -1464,7 +1431,7 @@ function boot(){
   const msub=names.length?h.match(new RegExp("^#("+names.join("|")+")\\b")):null;
   let sub = msub ? (SUBJECTS[msub[1]]?msub[1]:alias[msub[1]]) : localStorage.getItem("subject");
   if(keys.length===1)sub=keys[0];                 // 科目が1つなら選択画面を出さない
-  const my=h.match(/y(\d{4})/), mb=h.match(/b(\d{4})/), me=h.match(/e(\d{4})/), mel=/essay/.test(h);
+  const my=h.match(/y(\d{4})/), mb=h.match(/b(\d{4})/);
   // 編集モードへの直リンク: #<科目>-edit / #<科目>-edit2025 / #<科目>-editflag（要確認だけ）
   const med=/edit/.test(h), medy=h.match(/edit(\d{4})/), medf=/editflag/.test(h);
   if(sub&&SUBJECTS[sub]){
@@ -1474,8 +1441,6 @@ function boot(){
         else if(medf)editFlagged();
         else editHome();
       }
-      else if(me&&SUBJECTS[sub].essay)essayYear(+me[1]);
-      else if(mel&&SUBJECTS[sub].essay)essayYears();
       else if(my&&DATA.some(q=>q.year===+my[1]))startYear(+my[1]);
       else if(mb&&DATA.some(q=>q.year===+mb[1]))browseYear(+mb[1]);
       else menu();

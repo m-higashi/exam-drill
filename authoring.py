@@ -60,7 +60,11 @@ def subjects():
         if not isinstance(a, dict):
             continue
         mode = a.get("mode", "pipeline")
-        item = {"label": conf.get("name", key), "mode": mode}
+        # kind="essay" … 記述式（選択肢のない問題集）。**この宣言があるときだけ**
+        # 選択肢0個を通す。既定でエラーのままにしておかないと、取り込みで選択肢を
+        # 読み損ねた問題が「記述式」として黙って入ってしまう。
+        item = {"label": conf.get("name", key), "mode": mode,
+                "essay": conf.get("kind") == "essay"}
         if mode == "pipeline":
             if not a.get("enriched"):
                 continue
@@ -110,7 +114,11 @@ def config():
         out[key] = {"label": conf["label"], "mode": conf["mode"], "years": ys,
                     "rebuild": bool(conf["mode"] == "pipeline" and conf.get("rebuild")
                                     and conf["rebuild"].is_file()),
-                    "canAddQuestions": conf["mode"] == "direct"}
+                    "canAddQuestions": conf["mode"] == "direct",
+                    "essay": bool(conf.get("essay")),
+                    # 画像の置き場所は問題集ごとに違う（データJSONの隣の images/）。
+                    # 画面に直書きすると、`data/images/…` と案内して別の場所へ入る。
+                    "imageDir": (_img_root(conf)[1] if conf["mode"] == "direct" else None)}
     return {"enabled": bool(out), "subjects": out}
 
 
@@ -188,8 +196,15 @@ def norm_answer(value, labels=LETTERS):
     return ",".join(seen)
 
 
-def parse_choices(text):
-    """「a 選択肢の文」を1行ずつ受け取り、[{label,text}] にする。"""
+def parse_choices(text, allow_empty=False):
+    """「a 選択肢の文」を1行ずつ受け取り、[{label,text}] にする。
+
+    ⚠️**空（0個）は既定でエラー。** これは壊れたデータを弾く安全装置でもある。
+      無条件に0個を許すと、取り込みで選択肢を読み損ねた問題が「記述式」として
+      黙って通ってしまう。`allow_empty` は、記述式と宣言された問題集
+      （subjects.json の `kind: "essay"`）か、**もともと選択肢の無い問題を
+      直しているとき**だけ立てる（後者は、直せなくなる袋小路を作らないため）。
+    """
     if isinstance(text, list):
         # ⚠️リストだからと素通しにしない。中身が想定と違うと、後で
         #   c["label"] のところで落ちて 500 になる（バグ狩りで実際に出た）。
@@ -202,6 +217,8 @@ def parse_choices(text):
             if lab not in LETTERS:
                 raise BadRequest(f"選択肢の記号は {'・'.join(LETTERS)} のいずれかにしてください: {lab}")
             out.append({"label": lab, "text": clean_text(str(c["text"])).strip()})
+        if not out and allow_empty:
+            return []
         if len(out) < 2:
             raise BadRequest("選択肢は2つ以上必要です。")
         if len({c["label"] for c in out}) != len(out):
@@ -225,6 +242,8 @@ def parse_choices(text):
             raise BadRequest(f"選択肢の記号が重複しています: {lab}")
         seen.add(lab)
         out.append({"label": lab, "text": m.group(2).strip()})
+    if not out and allow_empty:
+        return []
     if len(out) < 2:
         raise BadRequest("選択肢は2つ以上必要です。")
     return out
@@ -259,7 +278,7 @@ def parse_images(text):
     return out
 
 
-def clean_entry(patch, mode, labels=LETTERS):
+def clean_entry(patch, mode, labels=LETTERS, allow_empty_choices=False):
     """来た差分を検証し、(上書きするキー, 削除するキー) に分ける。"""
     if not isinstance(patch, dict):
         raise BadRequest("保存内容が不正です")
@@ -272,8 +291,8 @@ def clean_entry(patch, mode, labels=LETTERS):
     setk, delk = {}, []
     # 選択肢を先に確定させる（解答の記号を選択肢と突き合わせるため）
     if "choices" in patch and patch["choices"] is not None:
-        setk["choices"] = parse_choices(patch["choices"])
-        labels = "".join(c["label"] for c in setk["choices"])
+        setk["choices"] = parse_choices(patch["choices"], allow_empty_choices)
+        labels = "".join(c["label"] for c in setk["choices"]) or LETTERS
     for key, val in patch.items():
         if key == "choices":
             if val is None:
@@ -498,7 +517,10 @@ def save_many(subject, items, single=False):
         i = _dr_find(data, y, qno)
         if i < 0:
             raise BadRequest(f"その問題がありません: {y}年 問{qno}")
-        setk, delk = clean_entry(it.get("entry") or {}, "direct", _dr_labels(data[i]))
+        # 記述式の問題集か、もともと選択肢の無い問題なら、選択肢0個のまま保存できる
+        empty_ok = bool(conf.get("essay")) or not (data[i].get("choices") or [])
+        setk, delk = clean_entry(it.get("entry") or {}, "direct",
+                                 _dr_labels(data[i]), empty_ok)
         if _dr_apply(data[i], setk, delk):
             changed += 1
     if changed:
@@ -742,7 +764,8 @@ def add_question(subject, year, qno=None):
     # ⚠️解答の既定は**空**。編集画面が「解答が空のときは採点しない」と案内している
     #   のに ["a"] を既定にすると、空のつもりで保存した人が a を正解にしてしまう。
     q = {"id": f"{y}-{n}", "year": y, "no": n, "stem": "（ここに問題文を書いてください）",
-         "choices": [{"label": l, "text": f"選択肢 {l}"} for l in "abcde"],
+         "choices": ([] if conf.get("essay") else          # 記述式の問題集は選択肢なしで作る
+                     [{"label": l, "text": f"選択肢 {l}"} for l in "abcde"]),
          "images": [], "answer": [], "flag": True, "expl": ""}
     data.append(q)
     data.sort(key=lambda x: (int(x.get("year", 0)), int(x.get("no", 0))))
@@ -776,6 +799,8 @@ def delete_question(subject, year, qno):
 RE_YEAR = re.compile(r"^\s*(?:[#＃]+\s*|=+\s*|【)?\s*(?:年|セット)?\s*[:：]?\s*"
                      r"(\d{4})\s*(?:年|回)?\s*(?:】|=+)?\s*$")
 RE_QNO = re.compile(r"^\s*(?:第\s*)?(?:問\s*(\d+)|(\d+)\s*[.．、)）:：])\s*(.*)$")
+# 「0.035インチ」「1.5テスラ」のような小数。問題番号と区別するため
+RE_DECIMAL = re.compile(r"^\s*\d+[.．]\d")
 # ⚠️記号は全角で打たれる（IMEやExcelの自動変換）。**記号の位置だけ**半角に寄せる。
 #   行ごと NFKC すると本文の半角カナまで変わるので、拾った1文字だけを直す。
 RE_CHOICE = re.compile(r"^\s*([A-Za-zＡ-Ｚａ-ｚ])[ 　	.．、,)）:：]\s*(.+)$")
@@ -794,15 +819,18 @@ RE_FLAG = re.compile(r"^\s*(?:要確認|要検討)\s*$")
 RE_EXPL = re.compile(r"^\s*(?:解説|説明|explanation)\s*[:：]?\s*(.*)$", re.I)
 
 
-def _q_finish(q, errors):
-    """1問ぶんを組み立てて検証する。問題があれば errors に足して None を返す。"""
+def _q_finish(q, errors, essay=False):
+    """1問ぶんを組み立てて検証する。問題があれば errors に足して None を返す。
+
+    essay=True は「記述式の問題集へ取り込むとき」だけ。選択肢0個を通す。
+    """
     line = q["_line"]
     stem = "\n".join(q["_stem"]).strip()
     if not stem:
         errors.append({"line": line, "message": f"{q['year']}年 問{q['no']}: 問題文がありません。"
                                                 "問題番号の行の次から書いてください。"})
         return None
-    if len(q["_choices"]) < 2:
+    if len(q["_choices"]) < 2 and not (essay and not q["_choices"]):
         errors.append({"line": line, "message": f"{q['year']}年 問{q['no']}: 選択肢が"
                        f"{len(q['_choices'])}個しかありません。「a 選択肢の文」の形で2つ以上。"})
         return None
@@ -830,7 +858,7 @@ def _q_finish(q, errors):
     return out
 
 
-def parse_text(text, default_year=None):
+def parse_text(text, default_year=None, essay=False):
     """テキストを問題のリストにする。返り値 (問題のリスト, エラーのリスト)。"""
     if not isinstance(text, str):
         raise BadRequest("取り込む内容が文字列ではありません。")
@@ -841,7 +869,7 @@ def parse_text(text, default_year=None):
     def close():
         nonlocal q, in_expl
         if q is not None:
-            built = _q_finish(q, errors)
+            built = _q_finish(q, errors, essay)
             if built:
                 questions.append(built)
         q, in_expl = None, False
@@ -856,7 +884,24 @@ def parse_text(text, default_year=None):
             year = int(m.group(1))
             continue
         m = RE_QNO.match(line)
-        if m and (m.group(1) or m.group(2)):
+        start = bool(m and (m.group(1) or m.group(2)))
+        if start and not m.group(1):
+            # ここは「問」も「第」も付かない、数字だけで始まる行。
+            # 数字で始まる**本文**と見分けがつかないので、次の2つは問題番号にしない。
+            n = int(m.group(2))
+            # ⚠️①小数と、桁の大きすぎる数。問題番号になりえない。
+            #   「0.035インチのガイドワイヤー…」が問0、
+            #   問題文が折り返した「2018）はどれか。1つ選べ。」が問2018 として
+            #   切り出され、本来の問題が「問題文なし」で落ちた。
+            if not 1 <= n <= 999 or RE_DECIMAL.match(line):
+                start = False
+            # ⚠️②解説の中の「1. …」「2. …」は箇条書きであって次の問題ではない。
+            #   問題番号は増えていくので、増えていなければ解説の続きとみなす。
+            #   （実データで、番号つきの箇条書きを含む解説が「問1〜問5」として
+            #     切り出され、取り込みが止まった）
+            elif in_expl and q is not None and n <= q["no"]:
+                start = False
+        if start:
             close()
             if year is None:
                 errors.append({"line": i, "message": "年（またはセットの番号）が決まっていません。"
@@ -932,12 +977,14 @@ def import_text(subject, text, mode="add", apply=False, default_year=None):
         raise BadRequest("この科目ではテキストからの取り込みはできません。")
     if mode not in ("add", "replace"):
         raise BadRequest(f"知らない取り込み方です: {mode}")
-    incoming, errors = parse_text(text, default_year)
+    incoming, errors = parse_text(text, default_year, bool(conf.get("essay")))
     path, data = _dr_load(conf)
     have = {(int(x.get("year", -1)), int(x.get("no", -1))) for x in data}
     new = [x for x in incoming if (x["year"], x["no"]) not in have]
     dup = [x for x in incoming if (x["year"], x["no"]) in have]
     plan = {"parsed": len(incoming), "new": len(new), "overwrite": len(dup),
+            # 選択肢なしで入るものは件数を出す（記述式の問題集でだけ起こりうる）
+            "noChoices": sum(1 for x in incoming if not x["choices"]),
             "removed": (len(data) if mode == "replace" else 0),
             "years": sorted({x["year"] for x in incoming}),
             "errors": errors,
@@ -978,12 +1025,16 @@ def check_template(explanation, labels=None, flag=False, sources=None):
     lines = [l.strip() for l in text.split("\n") if l.strip()]
     heads = set(SECTION_RE.findall(text))
     found = {m.group(1) for m in (CHOICE_RE.match(l) for l in lines) if m}
-    want = list(labels or "abcde")
+    # ⚠️labels が空文字なら「選択肢が無い問題（記述式）」。None（不明）と区別する。
+    #   ここを `labels or "abcde"` にすると、記述式のたびに
+    #   「選択肢 a〜e が行頭に無い」と助言してしまう。
+    want = list("abcde" if labels is None else labels)
     notes = []
     if not text.strip():
         return ["解説が空です。"]
-    if "総論" not in heads:
-        notes.append("【総論】の見出しがありません。")
+    if "総論" not in heads and not (not want and "模範解答" in heads):
+        notes.append("【総論】の見出しがありません。" if want else
+                     "【模範解答】または【総論】の見出しがありません。")
     missing = [l for l in want if l not in found]
     if missing:
         notes.append("選択肢が行頭に無いものがあります: " + "・".join(missing)
@@ -992,7 +1043,8 @@ def check_template(explanation, labels=None, flag=False, sources=None):
     if found and len(marked) < len(found):
         notes.append("○×△が付いていない選択肢の行があります。")
     if flag:
-        if "結論" not in heads:
+        # 選択肢が無い問題（記述式）は「答えが割れている」型ではないので【結論】は求めない
+        if want and "結論" not in heads:
             notes.append("要確認の問題です。【結論】に、どちらを採るか・なぜ割れるかを書いてください。")
         if not (sources or "出典" in heads or "http" in text):
             notes.append("要確認の問題です。出典（URLまたは資料名）を入れてください。")
