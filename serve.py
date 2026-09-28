@@ -8,8 +8,15 @@
   python serve.py 9000       ポートだけその場で上書き
   python serve.py 9000 127.0.0.1
 """
-import http.server, socketserver, subprocess, sys, os, functools, json, socket
+import http.server, socketserver, subprocess, sys, os, functools, json, socket, threading
 from pathlib import Path
+
+# ⚠️**編集API（書き込み）は並列にせず1本ずつ通す。**
+#   2026-09-27 に静的配信を並列（ThreadingMixIn）にしたが、解説の保存・取り込み・
+#   画像の割り当て・rebuild は同じファイルを書き換えるので、同時に走らせると
+#   **後から書いた方が前の保存を消す**。
+#   固まっていた原因は「静的配信が1本ずつ」だったので、**そちらだけ並列にすれば足りる**。
+_API_LOCK = threading.Lock()
 
 # 編集モード（解説オーサリング）のサーバー側。app/authoring.py が無い環境では
 # 読み取り専用の静的サーバーとして動く（配布・公開版はこのモジュールを同梱しない）。
@@ -142,6 +149,15 @@ def host_allowed(header):
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
+    # ⚠️**半端な接続を自動で切る（2026-09-27 に実害が出た）。**
+    #   スマホが電波の切れ目でリクエストを送り切らずに切れると、タイムアウトが無いので
+    #   サーバーはそこで**永久に待ち続ける**。実測（2026-09-27 15:59）:
+    #   別端末から来た1本が終わらないまま受付の列（既定5）が埋まり、
+    #   **LISTEN しているのに新規接続がすべて「接続拒否」**になった。
+    #   読み書き1回あたり30秒で見切る。BaseHTTPRequestHandler が socket.timeout を
+    #   受け止めて接続を閉じてくれるので、ここに書くだけでよい。
+    timeout = 30
+
     def log_message(self, *a):            # quieter logs
         pass
 
@@ -265,7 +281,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             # 画像の受け取りだけ上限が違う（本文は base64 なので大きい）
             limit = MAX_BODY_IMAGE if u.path == "/api/authoring/upload-image" else MAX_BODY
             body = self._read_json(limit) if writing else {}
-            self._send_json(200, self._dispatch(u.path, parse_qs(u.query), body, writing))
+            # ⚠️APIは1本ずつ（上の _API_LOCK を参照）。静的配信だけ並列にしてある。
+            with _API_LOCK:
+                result = self._dispatch(u.path, parse_qs(u.query), body, writing)
+            self._send_json(200, result)
         except authoring.BadRequest as e:
             self._send_json(400, {"error": str(e)})
         except Exception as e:                                  # noqa: BLE001
@@ -339,7 +358,15 @@ def main():
     #   SO_EXCLUSIVEADDRUSE にして、こちらが使っている間は誰にも取らせない。
     #   POSIX で SO_REUSEADDR を外すと、Ctrl+C 直後の起動し直しが TIME_WAIT で
     #   弾かれるので、そちらは今までどおり True にする。
-    class Server(socketserver.TCPServer):
+    # ⚠️**1本ずつしか捌けないサーバーにしない（2026-09-27 に止まった）。**
+    #   素の TCPServer は1つのリクエストを捌き終わるまで次を受け取らない。
+    #   スマホが送り切らずに切れた接続1本でアプリ全体が人質になり、
+    #   **プロセスは生きているのに全端末から「接続拒否」**になった（詳細は Handler.timeout の注）。
+    #   → ThreadingMixIn で同時に捌く。受付の列も既定5では浅すぎるので広げる。
+    #   ⚠️**編集APIは _API_LOCK で1本ずつのまま**（保存が競合して消えるのを防ぐ）。
+    class Server(socketserver.ThreadingMixIn, socketserver.TCPServer):
+        daemon_threads = True          # Ctrl+C で残ったスレッドに足を取られない
+        request_queue_size = 64        # 既定は5。詰まったときの余裕
         allow_reuse_address = (os.name != "nt")
 
         def server_bind(self):

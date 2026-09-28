@@ -573,6 +573,36 @@ function pendings(){return edLoad(edPendKey(),[])}
 function setDrafts(d){localStorage.setItem(edDraftKey(),JSON.stringify(d));refreshDrafts()}
 function setPendings(a){localStorage.setItem(edPendKey(),JSON.stringify(a));refreshDrafts()}
 
+/* ---------- ⚠️★書きかけは「どの本文から書き始めたか」を覚えておく（2026-09-27 に実害） ----------
+   以前は edRender() が drafts()[q.id] を**無条件で**サーバーの内容に上書きしていた。
+   書きかけがいつのものかを見ていないので、**古い書きかけが端末に残っていると、
+   その後どれだけ本体を書き直しても古い方が表示され続ける**。
+   実際にあった例: ある1問で、本体は9/25時点で495字に書き直してあったのに、
+   9/15以前の321字の書きかけが表示され「解説が巻き戻った」と見えた。
+   そのまま保存を押していたら**本体が本当に古い内容で潰れていた**。
+
+   → 書きかけに、書き始めたときの本文の目印 `base` と時刻 `at` を持たせる。
+     表示のとき目印が合わなければ**当てない**。捨てもしない。**知らせて本人に選ばせる**。
+   ⚠️目印の無い古い書きかけ（`base` が undefined）も「合わない」扱いにする。
+     出所が確かめられないものを黙って当てない、が要点。 */
+function edSig(b){
+  b=b||{};
+  // ⚠️区切りに制御文字を使わない（NUL はブラウザが勝手に置換する＝「踏んだバグ」参照）。
+  //   長さを頭に付ければ区切り文字が要らず、別々の中身が同じ文字列に潰れることもない。
+  const s=[b.explanation||"",b.answer||"",b.flag?"1":"0",b.sources||"",
+           b.stem||"",b.choices||"",b.images||""].map(x=>x.length+":"+x).join("|");
+  let h=5381;
+  for(let i=0;i<s.length;i++)h=((h*33)^s.charCodeAt(i))>>>0;
+  return s.length+"-"+h.toString(36);
+}
+/* この書きかけは「いま表示している本文」から書き始めたものか。
+   false = そのまま当ててよい ／ true = 当てずに知らせる。 */
+function edDraftStale(d,base,qid){
+  if(!d)return false;
+  if(ED&&ED.useDraft===qid)return false;        // 本人が「書きかけを当てる」を押した
+  return d.base!==edSig(base);
+}
+
 /* ---------- 書きかけ・未反映の判定（★ここ1か所だけ） ----------
    画面ごとに数えると必ずずれる。件数も文言もすべてこの関数から作る。 */
 function draftState(){
@@ -1132,14 +1162,16 @@ function editYear(y){
   edStart(list,0);
 }
 function editFlagged(){editList("flag")}   /* 直リンク #…editflag 用（中身は同じ） */
-function edStart(list,idx){S=null;ED={list,idx,raw:null};edOpen(idx)}
+function edStart(list,idx){S=null;ED={list,idx,raw:null,useDraft:null};edOpen(idx)}
 
 /* ---------- 1問を開く ---------- */
 function edOpen(i){
   if(ED&&ED.raw)edCollect();
   edUndoClear();          // 別の問題へ移ったら「元に戻す」は期限切れ
   if(i<0||i>=ED.list.length){editHome();return}
-  ED.idx=i;ED.raw=null;window.scrollTo(0,0);
+  // ⚠️useDraft は「この問題だけ書きかけを当てる」印。問題を移ったら必ず消す
+  //   （残すと、次の問題でも古い書きかけが黙って当たる＝直したはずの穴に戻る）。
+  ED.idx=i;ED.raw=null;ED.useDraft=null;window.scrollTo(0,0);
   const q=ED.list[i];
   document.getElementById("app").innerHTML=edBar()+'<div class="card">読み込み中…</div>';
   api(`/api/authoring/entry?subject=${encodeURIComponent(SUBJECT)}&year=${q.year}&no=${q.no}`)
@@ -1162,7 +1194,19 @@ function edBase(){
 function edRender(){
   const q=ED.list[ED.idx],raw=ED.raw||{},base=edBase();
   const d=drafts()[q.id];
-  const v=d?Object.assign({},base,d.fields):base;
+  // ⚠️古い書きかけは当てない（上の edDraftStale の注を参照）。本体を出して、下の帯で知らせる。
+  const stale=edDraftStale(d,base,q.id);
+  const v=(d&&!stale)?Object.assign({},base,d.fields):base;
+  const staleBar=stale?`<div class="msg info">
+      <b>この問題には、いまの本文とは別のところから書き始めた書きかけが残っています。</b><br>
+      ${d.at?`書きかけ: ${esc(new Date(d.at).toLocaleString("ja-JP"))}`
+            :'書きかけ: 時刻の記録なし（この仕組みを入れる前のもの）'}
+      ／ 本文はそのあとに更新されています。<br>
+      いま下に出ているのは<b>本文（保存されている内容）</b>です。書きかけは消していません。
+      <div style="margin-top:7px">
+        <button class="mini" onclick="edUseDraft()">書きかけを当てて見る</button>
+        <button class="mini warn" onclick="edDropDraft()">この書きかけを捨てる</button>
+      </div></div>`:"";
   const pend=!edDirect()&&pendings().includes(q.id);
   const previews=(v.images||"").split("\n").map(s=>s.trim()).filter(Boolean);
   const imgs=(edDirect()?previews:q.images)
@@ -1208,7 +1252,7 @@ function edRender(){
         <div class="muted">いま演習側に出ている解答: <b>${q.answer.length?esc(q.answer.join(", ").toUpperCase()):"（なし）"}</b>
           ${pend?'<br>※この問題は保存済みですが、まだ「反映」していないので左の表示は古いままです。':''}</div>
       </div>`;
-  document.getElementById("app").innerHTML=edBar()+`<div id="edmsg"></div>
+  document.getElementById("app").innerHTML=edBar()+staleBar+`<div id="edmsg"></div>
   <div class="edcols">
     <div>${left}</div>
     <div>
@@ -1264,6 +1308,10 @@ function edCollect(){
   if(!ED||!ED.raw)return;
   const f=edFields();if(!f)return;
   const q=ED.list[ED.idx],raw=ED.raw,base=edBase(),D=drafts();
+  // ⚠️保留中の古い書きかけには一切触らない。**消さない・上書きしない。**
+  //   ここを素通りさせると、本文を表示しているだけで下の same 判定に当たり、
+  //   本人が中身を見る前に書きかけが黙って消える。
+  if(edDraftStale(D[q.id],base,q.id))return;
   const keys=ED_TEXT.filter(k=>k in f);
   const same=f.flag===base.flag&&keys.every(k=>f[k]===base[k]);
   if(same){if(D[q.id]){delete D[q.id];setDrafts(D)}return}
@@ -1281,8 +1329,25 @@ function edCollect(){
     if(norm!==q.answer.join(",")||raw.answer!==undefined)patch.answer=norm;
     if(f.flag!==!!q.flag||raw.flag!==undefined)patch.flag=f.flag;
   }
-  D[q.id]={year:q.year,no:q.no,fields:f,patch:patch};
+  // base/at ＝「どの本文から書き始めたか」と「いつ書いたか」（上の edSig の注を参照）
+  D[q.id]={year:q.year,no:q.no,fields:f,patch:patch,base:edSig(base),at:Date.now()};
   setDrafts(D);
+}
+/* 古い書きかけの帯から呼ぶ2つ。**どちらも本人が押したときだけ動く。** */
+function edUseDraft(){
+  const q=ED.list[ED.idx];
+  ED.useDraft=q.id;                      // この問題に限り、書きかけを当てて描き直す
+  edRender();
+  edMsg("info","書きかけを当てました。保存するまで本文は変わりません。");
+}
+function edDropDraft(){
+  const q=ED.list[ED.idx],D=drafts();
+  if(!D[q.id]){edMsg("info","この問題に書きかけはありません。");return}
+  delete D[q.id];
+  setDrafts(D);
+  ED.useDraft=null;
+  edRender();                            // ⚠️捨てた直後に必ず描き直す（入力欄に残った文字から復活するのを防ぐ）
+  edMsg("ok","この問題の書きかけを捨てました。いま出ているのは保存されている本文です。");
 }
 /* 書きかけの件数に連動する表示を、**まとめて作り直す**。
    ⚠️個別に手当てすると必ず取りこぼす。実際、保存ボタンだけ直していたため
